@@ -1,0 +1,399 @@
+#! /usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*	bounced
+* PURPOSE
+*	Bounce files in the bounce queue back to it's sender,
+*	or (if that is not possible) bounce it back to admin.
+* AUTHORS
+*	Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+##############################
+# Configuration
+#
+# ### Full path to the mail spool dir
+
+  my $PREFIX = '@@PREFIX@@';
+
+# ### Sendmail:
+
+  my $SENDMAIL = '@@SENDMAIL@@';
+
+##############################
+
+require 5;
+use strict;
+use lib '@@INCLUDE@@';
+use POSIX;
+use Getopt::Std;
+use Glist;
+use Glist::Bounce;
+use Version;
+use vars qw($VERSION $opt_D $opt_v $opt_n $opt_s $opt_t);
+
+sub fsetpnam {eval{$0=shift}};
+
+my $myself = $0;
+$myself =~ s%.*/%%;
+fsetpnam("[glist/bounced]");
+
+# Need arguments.
+unless(@ARGV) {
+	print_usage();
+};
+
+# ##############################################
+# Get command line arguments:
+#
+# Switch	Type		Name
+# ------	-------------	----------------
+# -D		boolean		Daemon
+# -v		boolean		verbose
+# -n		boolean		no action
+# -s		boolean		single
+# -t		argument	time to sleep
+####
+getopts('Dvnst:');
+
+
+# Signal handlers. We should clean up our mess.
+$SIG{INT} 	= \&cleanup_no_remove;
+$SIG{TERM} 	= \&cleanup;
+$SIG{HUP}	= \&cleanup;
+
+my $LOCKFILE = $PREFIX . "/var/run/bounced-lock";
+
+
+if($opt_D) {
+	# Become a daemon:
+	my $pid = fork;
+	exit if $pid;
+	cleanup_no_remove("Couldn't fork: $!") unless defined($pid);
+	POSIX::setsid() or cleanup_no_remove("Can't start a new session: $!");
+
+
+	my $gl = Glist::new(
+		prefix		=> $PREFIX,
+		verbose		=> $opt_v,
+		no_action	=> $opt_n,
+		daemon		=> 1,
+		name		=> 'bounced',
+	);
+	
+	my $bc = $gl->Glist::Bounce::new(
+		sendmail 	=> $SENDMAIL,
+	);
+	cleanup($gl->error()) if $gl->error();
+	
+	my $logerror = $gl->dead_logdaemon;
+	die("$logerror\n") if $logerror;
+	lockfile() || cleanup_no_remove();
+
+
+	eval{setpriority(PRI_PROCESS, $pid, PRIORITY)};	
+	$SIG{HUP} = sub {
+		$gl->gconf($gl->get_config());
+		$gl->log("Daemon restart. Configuration re-read.");
+	};
+
+	# Run in loop until killed
+	while(1) {
+		fsetpnam("[glist/bounced] (work)");
+		$bc->handle_files() or cleanup();
+		fsetpnam("[glist/bounced] (idle)");
+		sleep time_to_sleep();
+	};
+}
+elsif($opt_s) {
+
+	# Run once
+	my $gl = Glist::new(
+		prefix		=> $PREFIX,
+		verbose		=> $opt_v,
+		no_action	=> $opt_n,
+		name		=> 'bounced',
+	);
+
+	my $bc = $gl->Glist::Bounce::new(
+		sendmail 	=> $SENDMAIL,
+	
+	);
+	cleanup($gl->error()) if $gl->error();
+	my $logerror = $gl->dead_logdaemon;
+	die("$logerror\n") if $logerror;
+	lockfile() || cleanup_no_remove();
+	$bc->handle_files() or cleanup();
+}
+else {
+	print_usage();
+	cleanup("Missing required arguments");
+};
+
+cleanup();
+
+############################################
+# DESTRUCTOR: cleanup
+#
+# DESCRIPTION:
+#	Be nice, exit sweet and remove our lockfile.
+#
+sub cleanup {
+	my $msg = shift;
+	if($msg) {
+		print $msg, "\n";
+	}
+	if(-f $LOCKFILE) {
+		unlink($LOCKFILE);
+	};
+	exit;
+};
+
+# the same but without removing the lockfile.
+sub cleanup_no_remove {
+	my $msg = shift;
+	if($msg) {
+		print $msg, "\n";
+	};
+	exit;
+};
+
+# get's the time to sleep (in seconds) from the
+# command line options.
+sub time_to_sleep {
+	my $tts; # time to sleep
+	if($opt_t) {
+		$tts = $opt_t;
+	}
+	else {
+		# default is 5 seconds
+		$tts = 5;
+	};
+	return $tts;
+};
+
+sub print_usage {
+	my $version = new Version($Glist::VERSION);
+	printf("bounced (glist %s)\n", $version->extended());
+	printf("Usage: %s [-v] [-n] {-D [-t time_to_sleep]|-s}\n", $myself);
+	cleanup_no_remove();
+};
+
+############################################
+# FUNCTION: process_running($)
+# DESCRIPTION:
+#	Check if a PID is still running.
+#
+sub process_running {
+	my $pid = shift;
+	unless(-d "/proc/$pid") {
+		return undef;
+	}
+	else {
+		return 1;
+	};
+};
+
+############################################
+# FUNCTION: lockfile()
+# DESCRIPTION:
+#	We don't want two of use running at the same time.
+#	
+sub lockfile {
+	if(-l $LOCKFILE) {
+		cleanup_no_remove("Oops. $LOCKFILE is a symbolic link. possible race attempt.");
+		return undef;
+	};
+
+	if( -f $LOCKFILE) {
+		open(LOCK, $LOCKFILE)
+			|| cleanup_no_remove("Couldn't open lockfile $LOCKFILE: $!");
+		my $lock_pid;
+		while(<LOCK>) {
+			chomp;
+			$lock_pid = $_ if (/\d+/);
+		};
+		unless($lock_pid) {
+			cleanup_no_remove("Invalid lock file. Please check and remove by hand.");
+		};
+
+		if(process_running($lock_pid)) {
+			cleanup_no_remove("We're already running under PID $lock_pid");
+		}
+		else {
+			print STDERR ("Stale lockfile found (owned by PID $lock_pid). Removing\n");
+			unlink($LOCKFILE);
+		};
+	};
+
+	open(LOCK, ">$LOCKFILE")
+		|| cleanup_no_remove("Couldn't create lockfile $LOCKFILE: $!");
+	print LOCK $$, "\n";
+	close(LOCK);
+
+	return 1;
+};
+
+__END__
+
+=cut
+=head1 NAME
+
+bounced - Bounce mails in the defer spool
+
+=head1 SYNOPSIS
+
+	Run from crontab:
+
+	00-59 * * * * /path/to/bounced -s
+
+	Or in daemon mode:
+
+	/path/to/bounced -D -t time_to_sleep
+
+=head1 COMMAND LINE SWITCHES AND OPTIONS
+
+	Usage: bounced [-v] [-n] {-D [-t time_to_sleep]|-s}
+
+=over 4
+
+=item -D
+
+	Run the program in daemon mode.
+
+=item -t
+
+	Time (in seconds) which we'll be sleeping
+	between each run. (only in deamon mode)
+
+=item -s
+
+	Run once and exit.
+
+=item -v
+
+	Give verbose error and info messages in logging
+
+=item -n
+
+	Debug mode. Don't really send mail and do not
+	delete the queue file.
+
+=back
+
+=head1 DESCRIPTION
+
+	Bounced handles the bounced mail in the defer queue
+	and sends it back to the right recipient.
+
+	1. Get a new file from the defer queue.
+	2. Try to get the sender by various methods.
+	3. Find out what kind of bounce this is (glist error, external smtpd bounce etc)
+	4. Send it back to the sender.
+
+	If no sender is found or the deferred mail cannot be linked to any
+	glist mailinglist, the admin defined in the global configuration directory
+	of glist.conf is used.
+
+
+=head1 CONFIGURATION
+
+	Configuration is done in the script it self.
+	Thogh this is preferred to be changed in the Makefile,
+	this can be done in the script as well.
+
+	In the first lines of bounced you can configure the following variables:
+
+=over 4
+
+=item	PREFIX
+
+	Bounced's prefix path.
+
+=item	SENDMAIL
+
+	The full path to the sendmail program, with options.
+	(usually sendmail -t)
+
+=back
+	
+=head1 FILES
+
+=over 4
+
+=item	Message files in PREFIX/spool/deferred
+
+	Each message file should be like this:
+
+	Header part
+	<empty line>
+	Body Part
+
+	The following headers are specific for bounced:
+
+	X-GL-Error	-	The error we should send back.
+	X-Mailinglist	-	The mailinglist this mail belongs to.
+	X-Original-Sender -	The original sender of this mail.
+
+=back
+
+=head1 REQUIREMENTS
+
+=over 4
+
+=item	Perl 5
+
+	Maybe even Perl 5.6?
+
+=item	POSIX
+
+	Should be in the standard perl distribution.
+
+=item	Getopt:Std
+
+	Should be in the standard perl distribution.
+
+=item	File::Copy
+
+	Should be in the standard perl distribution.
+
+=item	Postfix / Sendmail
+
+	http://www.postfix.org
+	http://www.sendmail.org
+
+=back
+
+=head1 VERSION
+
+	This is version 1.0
+
+=head1 BUGS
+
+	None known as of this date :)
+
+=head1 AUTHOR
+
+	Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+
+=cut

@@ -1,0 +1,48 @@
+GLIST - DESIGN AND IMPLEMENTATION
+==============================================================================
+
+OVERVIEW
+
+.- - - - -.			  +-+-+-+-+-+-+	       .-----------.   .- - - - -.
+|   MDA   |			  |  approveq |<------>|  approved |-->|   MTA   |
+`- - - - -'			  +-+-+-+-+-+-+        `-----------'   `- - - - -'
+      |				  /
+      |				 /
+      V				/
++-+-+-+-+-+-+-+  +-+-+-+-+-+-+-+  +-+-+-+-+-+-+  +-+-+-+-+-+-+  +-+-+-+-+-+-+
+|  incoming   |  |   rewrite   |  |  outgoing |  |    send   |  |  deferred |
++-+-+-+-+-+-+-+  +-+-+-+-+-+-+-+  +-+-+-+-+-+-+  +-+-+-+-+-+-+  +-+-+-+-+-+-+
+      |         /        ^        /      |       /      ? : -------^   |
+      |        /         |       /       |      /       |              |
+      V       /          V      /        V     /        V              V
+.-------------.  .-------------.  .-----------.  .- - - - - -.  .-----------.
+|    getd     |  |   rewrited  |  |   sendd   |  |    MTA    |<-|  bounced  |
+`-------------'  `-------------'  `-----------'  `- - - - - -'  `-----------'
+       |                |               V                             |
+       |                V           .-------------.                   |
+       `--------------------------->|    logd     |<------------------'
+                                    `-------------'
+
+
+EXPLANATION:
+
+  +-+ = spools
+  .-- = glist daemons
+  .-  = outside daemons
+
+DESCRIPTION:
+
+  GLIST DAEMONS:
+
+  * getd: Get files in the incoming spool and pass to rewrite spool.
+  * rewrited: Rewrite files to sendd format and pass to outgoing spool.
+  * sendd: Send files outgoing queue.
+  * bounced: Bounce files in deferred queue.
+  * logd: Handle logging from all daemons.
+
+  OUTSIDE DAEMONS:
+
+  * MDA: Mail Delivery Agent
+  * MTA: Mail Transfer Agent
+
+==============================================================================

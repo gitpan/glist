@@ -1,0 +1,505 @@
+#! /usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*	sendd
+* PURPOSE
+*	Send the mail in the send queue in a way that won't
+*	bring the system down.
+* AUTHORS
+*	Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+##############################
+# Configuration
+#
+# ### Full path to the mail spool dir
+
+  my $PREFIX = '@@PREFIX@@';
+
+# ### Sendmail:
+
+  my $SENDMAIL = '@@SENDMAIL@@';
+
+# ### SQL Support?
+
+  my $USE_SQL = '@@USE_SQL@@';
+
+  my $USE_PGSQL = '@@USE_PGSQL@@';
+  my $USE_DB2   = '@@USE_DB2@@';
+  my $USE_MSQL	= '@@USE_MSQL@@';
+  my $USE_MYSQL = '@@USE_MYSQL@@';
+
+##############################
+
+BEGIN {
+	my $USE_SQL = '@@USE_SQL@@';
+	my $USE_PGSQL = '@@USE_PGSQL@@';
+	my $USE_DB2 = '@@USE_DB2@@';
+  	my $USE_MSQL	= '@@USE_MSQL@@';
+	my $USE_MYSQL = '@@USE_MYSQL@@';
+	if($USE_SQL eq 'yes') {
+		if (eval "require DBI;") {
+			require DBI;
+		};
+	};	
+	if($USE_PGSQL eq 'yes') {
+		if (eval "require DBD::Pg;") {
+			require DBD::Pg;
+		};
+	};
+	if($USE_DB2 eq 'yes') {
+		if (eval "require DBD::DB2;") {
+			require DBD::DB2;
+			require DBD::DB2::Constants;
+		};
+	};
+	if($USE_MSQL eq 'yes') {
+		if (eval "require DBD::mSQL;") {
+			require DBD::mSQL;
+		};
+	};
+	if($USE_MYSQL eq 'yes') {
+		if (eval "require DBD::mysql;") {
+			require DBD::mysql;
+		};
+	};
+};
+
+require 5;
+use strict;
+use lib '@@INCLUDE@@';
+use POSIX;
+use Getopt::Std;
+use Glist;
+use Glist::Send;
+use Version;
+use vars qw($VERSION $opt_D $opt_v $opt_n $opt_s $opt_t);
+
+sub fsetpnam {eval{$0=shift}};
+my $myself = $0;
+$myself =~ s%.*/%%;
+fsetpnam("[glist/sendd]");
+
+# Need arguments.
+unless(@ARGV) {
+	print_usage();
+};
+
+# ##############################################
+# Get command line arguments:
+#
+# Switch	Type		Name
+# ------	-------------	----------------
+# -D		boolean		Daemon
+# -v		boolean		verbose
+# -n		boolean		no action
+# -s		boolean		single
+# -t		argument	time to sleep
+####
+getopts('Dvnst:');
+
+
+# Signal handlers. We should clean up our mess.
+$SIG{INT} 	= \&cleanup_no_remove;
+$SIG{TERM} 	= \&cleanup;
+$SIG{HUP}	= \&cleanup;
+
+my $LOCKFILE = $PREFIX . "/var/run/sendd-lock";
+
+
+if($opt_D) {
+	# Become a daemon:
+	my $pid = fork;
+	exit if $pid;
+	cleanup_no_remove("Couldn't fork: $!") unless defined($pid);
+	POSIX::setsid() or cleanup_no_remove("Can't start a new session: $!");
+
+
+	my $gl = Glist::new(
+		prefix		=> $PREFIX,
+		verbose		=> $opt_v,
+		no_action	=> $opt_n,
+		daemon		=> 1,
+		name		=> 'sendd',
+		use_sql		=> $USE_SQL,
+	);
+	
+	my $ls = $gl->Glist::Send::new(
+		sendmail 	=> $SENDMAIL,
+	);
+	cleanup($gl->error()) if $gl->error();
+
+        my $logerror = $gl->dead_logdaemon;
+        die("$logerror\n") if $logerror;
+	lockfile() || cleanup_no_remove();
+	eval{setpriority(PRI_PROCESS, $pid, PRIORITY)};
+	$SIG{HUP} = sub {
+		$gl->gconf($gl->get_config());
+		$gl->log("Daemon restart. Configuration re-read.");
+	};
+
+	# Run in loop until killed
+	while(1) {
+		fsetpnam("[glist/sendd] (work)");
+		$ls->handle_files() or cleanup();
+		fsetpnam("[glist/sendd] (idle)");
+		sleep time_to_sleep();
+	};
+}
+elsif($opt_s) {
+	# Run once
+
+
+	my $gl = Glist::new(
+		prefix		=> $PREFIX,
+		verbose		=> $opt_v,
+		no_action	=> $opt_n,
+		name		=> 'sendd',
+		use_sql		=> $USE_SQL,
+	);
+
+	my $ls = $gl->Glist::Send::new(
+		sendmail 	=> $SENDMAIL,
+	
+	);
+	cleanup($gl->error()) if $gl->error();
+
+        my $logerror = $gl->dead_logdaemon;
+        die("$logerror\n") if $logerror;
+
+	lockfile() || cleanup_no_remove();
+	$ls->handle_files() or cleanup();
+}
+else {
+	print_usage();
+	cleanup("Missing required arguments");
+};
+
+cleanup();
+
+############################################
+# DESTRUCTOR: cleanup
+#
+# DESCRIPTION:
+#	Be nice, exit sweet and remove our lockfile.
+#
+sub cleanup {
+	my $msg = shift;
+	if($msg) {
+		print $msg, "\n";
+	}
+	if(-f $LOCKFILE) {
+		unlink($LOCKFILE);
+	};
+	exit;
+};
+
+# the same but without removing the lockfile.
+sub cleanup_no_remove {
+	my $msg = shift;
+	if($msg) {
+		print $msg, "\n";
+	};
+	exit;
+};
+
+# get's the time to sleep (in seconds) from the
+# command line options.
+sub time_to_sleep {
+	my $tts; # time to sleep
+	if($opt_t) {
+		$tts = $opt_t;
+	}
+	else {
+		# default is 5 seconds
+		$tts = 5;
+	};
+	return $tts;
+};
+
+sub print_usage {
+	my $version = new Version($Glist::VERSION);
+	printf("sendd (glist %s)\n", $version->extended());
+	printf("Usage: %s [-v] [-n] {-D [-t time_to_sleep]|-s}\n", $myself);
+	cleanup_no_remove();
+};
+
+############################################
+# FUNCTION: process_running($)
+# DESCRIPTION:
+#	Check if a PID is still running.
+#
+sub process_running {
+	my $pid = shift;
+	unless(-d "/proc/$pid") {
+		return 0;
+	}
+	else {
+		return 1;
+	};
+};
+
+############################################
+# FUNCTION: lockfile()
+# DESCRIPTION:
+#	We don't want two of use running at the same time.
+#	
+sub lockfile {
+	if(-l $LOCKFILE) {
+		cleanup_no_remove("Oops. $LOCKFILE is a symbolic link. possible race attempt.");
+		return undef;
+	};
+
+	if(-f $LOCKFILE) {
+		open(LOCK, $LOCKFILE)
+			|| cleanup_no_remove("Couldn't open lockfile $LOCKFILE: $!");
+		my $lock_pid;
+		while(<LOCK>) {
+			chomp;
+			$lock_pid = $_ if (/\d+/);
+		};
+		unless($lock_pid) {
+			cleanup_no_remove("Invalid lock file. Please check and remove by hand.");
+		};
+
+		if(process_running($lock_pid)) {
+			cleanup_no_remove("We're already running under PID $lock_pid");
+		}
+		else {
+			print STDERR ("Stale lockfile found (owned by PID $lock_pid). Removing\n");
+			unlink($LOCKFILE);
+		};
+	};
+
+	open(LOCK, ">$LOCKFILE")
+		|| cleanup_no_remove("Couldn't create lockfile $LOCKFILE: $!");
+	print LOCK $$, "\n";
+	close(LOCK);
+
+	return 1;
+};
+
+__END__
+
+=cut
+=head1 NAME
+
+sendd - Flush glist's Mailinglist Spool
+
+=head1 SYNOPSIS
+
+	Run from crontab:
+
+	00-59 * * * * /path/to/sendd -s
+
+	Or in daemon mode:
+
+	/path/to/sendd -D -t time_to_sleep
+
+=head1 COMMAND LINE SWITCHES AND OPTIONS
+
+	Usage: sendd [-v] [-n] {-D [-t time_to_sleep]|-s}
+
+=over 4
+
+=item -D
+
+	Run the program in daemon mode.
+
+=item -t
+
+	Time (in seconds) which we'll be sleeping
+	between each run. (only in deamon mode)
+
+=item -s
+
+	Run once and exit.
+
+=item -v
+
+	Give verbose error and info messages in logging
+
+=item -n
+
+	Debug mode. Don't really send mail and do not
+	delete the queue file.
+
+=back
+
+=head1 DESCRIPTION
+
+	Sendd is the program that flushes glist's mailinglist spool.
+
+	It checks for files in the PREFIX/spool/outgoing directory.
+	For each file it finds it will:
+
+	1. Move the file to the PREFIX/spool/send directory.
+	2. Parse the file and generate the headers
+	3. Connect to the DB in the X-DB_Server and X-Database headers
+	   and get the e-mail addresses from the push list id X-Push_list_id
+	   or get the files from the mailinglist file (if the mailinglist type is file)
+	4. Generate Bcc/Resent-bcc information in correct format from the list of
+	   approved e-mail addresses.
+	5. Send the mail if it finds all required headers
+	6. If the mail was send successfully; delete the message file.
+
+	If the message couldn't be parsed it will be moved to the defer directory,
+	which is PREFIX/spool/deferred.
+
+=head1 CONFIGURATION
+
+	Configuration is done in the script it self.
+	Thogh this is preferred to be changed in the Makefile,
+	this can be done in the script as well.
+
+	In the first lines of sendd you can configure the following variables:
+
+=over 4
+
+=item	PREFIX
+
+	Sendd's prefix path.
+
+=item	SENDMAIL
+
+	The full path to the sendmail program, with options.
+	(usually sendmail -t)
+
+=item	USE_SQL
+
+	Set to db2 or pgsql. Defines if the DBI and DBD::Pg/DBD::DB2 modules should be used,
+	and postgresql/db2 support is implemented.
+
+=back
+	
+=head1 FILES
+
+=over 4
+
+=item	PREFIX/etc/glist.passwd
+
+	The database of passwords.
+	This file has the following format:
+
+	servername:dbname:user:pass
+
+	NOTE: This must only be readable by the uid sendd runs as.
+	Please also note that it's generally a bad idea to run
+	sendd as root.	
+
+=item	Message files in PREFIX/spool/outgoing
+
+	Each message file should be like this:
+
+	Header part
+	<empty line>
+	Body Part
+
+	The following headers are required:
+
+	From		- The sender of the message
+	To		- The recipient of the message
+	Subject 	- The subject of the message
+
+	The following headers are optional depending if the list
+	is sql or file based:
+
+	X-DB_Server	- The database server we should connect to
+	X-Database	- The database we should use on the server
+	X-Push_list_id	- The id of the member list to use
+	X-File		- The file containing the recipients
+	
+
+=back
+
+=head1 REQUIREMENTS
+
+=over 4
+
+=item	Perl 5
+
+	Maybe even Perl 5.6?
+
+=item	POSIX
+
+	Should be in the standard perl distribution.
+
+=item	Getopt:Std
+
+	Should be in the standard perl distribution.
+
+=item	File::Copy
+
+	Should be in the standard perl distribution.
+
+=item	DBI
+
+	The CPAN module can install this for you:
+
+	# perl -MCPAN -e shell
+	cpan> install DBI
+
+=item	DBD::Pg
+
+	The CPAN module can install this for you:
+
+	# export POSTGRES_INCLUDE=/path/to/postgres/include
+	# export POSTGRES_LIB=/path/to/postgres/lib
+	# perl -MCPAN -e shell
+	cpan> install DBD::Pg
+
+=item	Postfix / Sendmail
+
+	http://www.postfix.org
+	http://www.sendmail.org
+
+=back
+
+=head1 VERSION
+
+	This is version 1.00, derived from listspoold 1.00
+
+=head1 TODO
+
+	* If somehow (despite the locking check) the daemon manages to run twice,
+	the message can in some rare conditions be sent twice.
+
+	This can be fixed by adding another queue where the message will be moved
+	as soon as it is found by the daemon. Actions after this will be done
+	with the file in the new directory.
+
+	This is done in version listspoold 1.00
+
+=head1 BUGS
+
+	None known as of this date :)
+
+=head1 HISTORY
+
+	This is an glist implementation of listspool version 1.0
+
+=head1 AUTHOR
+
+	Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+
+=cut

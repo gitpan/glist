@@ -1,0 +1,31 @@
+GLIST - README
+==============================================================================
+
+Wow. someone's reading this.
+
+WHAT IS GLIST?
+	Glist is a mailing list manager, designed for stability, security
+	and simplicity.
+
+INSTALLATION
+
+	See the file INSTALL
+
+UPGRADING
+
+	Upgrading is very simple. Should be done properly by just
+	executing make install. But please see the Changelog file
+	for configuration changes etc.
+
+CONFIGURATION
+
+	See the file CONFIG
+
+DETAILS
+	See the file DESIGN, and the documentation pages
+	for each component.
+
+AUTHORS
+	Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+
+==============================================================================

@@ -1,0 +1,246 @@
+#!/usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+* 	logd
+* PURPOSE
+*	Parse log messages sent to a unix domain socket
+*	and write it to the correct logfile.
+* AUTHORS
+*	Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+##############################
+# Configuration
+#
+# ### Full path to the mail spool dir
+
+  my $PREFIX = '/opt/glist';
+
+##############################
+
+use strict;
+use lib '../include';
+use Glist;
+use Socket;
+use POSIX;
+use Fcntl qw(:flock);
+use IO::Handle;
+
+sub fsetpnam {eval{$0=shift}};
+
+fsetpnam("[glist/gconfd]");
+$| = 1;
+
+# Path to our lockfile
+my $LOCKFILE = $PREFIX . "/var/run/gconfd-lock";
+
+# Signal handlers. We should clean up our mess.
+$SIG{INT}       = \&cleanup_no_remove;
+$SIG{TERM}      = \&cleanup;
+$SIG{HUP}       = \&cleanup;
+
+# Become a daemon...
+#my $pid = fork();
+#exit if $pid;
+#cleanup_no_remove("Couldn't fork: $!") unless defined($pid);
+#POSIX::setsid() or cleanup_no_remove("Can't start a new session: $!");
+
+#... do the lock file dance.
+lockfile() || cleanup_no_remove();
+
+#eval{setpriority(PRI_PROCESS, $pid, PRIORITY)};
+
+my $glist = Glist::new(
+	prefix	=>	$PREFIX,
+	name	=>	'gconfd',
+);
+
+my $config = $glist->get_config();
+
+socket(SERVER, PF_UNIX, SOCK_DGRAM, 0);
+unlink $glist->gc_socket();
+bind(SERVER, sockaddr_un($glist->gc_socket()))
+	or die("Can't create server: $!");
+
+my %valid_vars = (
+	name	=> 1,
+	block	=> 1,
+	key	=> 1,
+);
+
+while(my $entry = <SERVER>) {
+	SERVER->autoflush(1);
+	$| = 1;
+	print STDERR $entry, "\n";
+	chomp($entry);
+	my @fields = split(/\s+/, $entry, 3);
+	my %entry;
+	foreach my $field (@fields) {
+		my ($key, $value) = split('=', $field);
+		next unless $valid_vars{$key};
+		next if(length $value > 2048);
+		$entry{$key} = $value;
+	};
+	printf SERVER ("for=%s block=%s key=%s value=%s",
+		$entry{name},
+		$entry{block},
+		$entry{key},
+		$config->{$entry{block}}{$entry{key}}
+	);
+	printf STDERR ("for=%s block=%s key=%s value=%s",
+		$entry{name},
+		$entry{block},
+		$entry{key},
+		$config->{$entry{block}}{$entry{key}}
+	);
+};
+
+sub cleanup {
+        my $msg = shift;
+        if($msg) {
+                print $msg, "\n";
+        }
+        if(-f $LOCKFILE) {
+                unlink($LOCKFILE);
+        };
+        exit;
+};
+
+sub cleanup_no_remove {
+        my $msg = shift;
+        if($msg) {
+                print $msg, "\n";
+        };
+        exit;
+};
+
+sub process_running {
+        my $pid = shift;
+        unless(-d "/proc/$pid") {
+                return undef;
+        }
+        else {
+                return 1;
+        };
+};
+
+sub lockfile {
+        if(-l $LOCKFILE) {
+                cleanup_no_remove("Oops. $LOCKFILE is a symbolic link. possible race attempt.");
+                return undef;
+        };
+
+        if(-f $LOCKFILE) {
+                open(LOCK, $LOCKFILE)
+                        || cleanup_no_remove("Couldn't open lockfile $LOCKFILE: $!");
+                my $lock_pid;
+                while(<LOCK>) {
+                        chomp;
+                        $lock_pid = $_ if (/\d+/);
+                };
+                unless($lock_pid) {
+                        cleanup_no_remove("Invalid lock file. Please check and remove by hand.");
+                };
+
+                if(process_running($lock_pid)) {
+                        cleanup_no_remove("We're already running under PID $lock_pid");
+                }
+                else {
+                        print STDERR ("Stale lockfile found (owned by PID $lock_pid). Removing\n");
+                        unlink($LOCKFILE);
+                };
+        };
+
+        open(LOCK, ">$LOCKFILE")
+                || cleanup_no_remove("Couldn't create lockfile $LOCKFILE: $!");
+        print LOCK $$, "\n";
+        close(LOCK);
+
+        return 1;
+};
+__END__
+
+=cut
+=head1 NAME
+
+gconfd - Server Glist configuration
+
+=head1 SYNOPSIS
+
+        /path/to/gconfd
+
+=head1 COMMAND LINE SWITCHES AND OPTIONS
+
+	Gconfd has no options or switches.
+
+=head1 DESCRIPTION
+
+	Gconfd reads configuration requests from a unix domain socket 
+	and writes the answer back to the requester.
+
+	Gconfd recognizes configuration requests in the following order:
+
+	"name=%s block=%d key=%s\n"
+
+=head1 CONFIGURATION
+
+        Configuration is done in the script it self.
+        Thogh this is preferred to be changed in the Makefile,
+        this can be done in the script as well.
+
+        In the first lines of sendd you can configure the following variables:
+
+=over 4
+
+=item
+	PREFIX
+
+	The prefix path for glist.
+
+=back
+
+=head1  FILES
+
+=over 4
+
+=item	PREFIX/var/run/gconfd.sock
+
+	This is the unix domain socket the daemons writes their
+	messages to.
+
+=back
+
+=head1 VERSION
+
+	This is version 1.00
+
+=head1 BUGS
+
+	None known as of this date :)
+
+=head1 AUTHOR
+
+        Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+
+=cut
+

@@ -1,0 +1,13 @@
+prefix=/opt/glist
+perl=/usr/bin/perl
+perl_arg=
+sendmail=/usr/sbin/sendmail
+sendmail_arg=-t
+use_sql=no
+use_db2=
+use_pgsql=
+glist_user=glist
+glist_group=glist
+use_msql=
+use_mysql=
+use_wrappers=no

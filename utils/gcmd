@@ -1,0 +1,158 @@
+#!/usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*	gcmd
+* PURPOSE
+*	Get a message from stdin and run it's list commands (if any)
+* AUTHORS
+*	Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+use strict;
+use lib '@@INCLUDE@@';
+use Glist;
+use Glist::Admin;
+use Glist::Rewrite;
+use Crypt::TripleDES;
+
+$ENV{PATH} = '';
+$ENV{ENV} = '';
+
+die "Don't run as root!\n" unless $>; # $EUID
+die "Shouldn't be run from console.\n" if -c '/proc/self/fd/0';
+
+my $PREFIX = '@@PREFIX@@';
+my $SENDMAIL = '@@SENDMAIL@@';
+
+my $glist = Glist::new(prefix=>$PREFIX,name=>'glist');
+my $adm = $glist->Glist::Admin::new(sendmail=>$SENDMAIL);
+my $rw = $glist->Glist::Rewrite::new();
+my $mailinglist;
+
+if(@ARGV) {
+	$mailinglist = shift @ARGV;
+	$glist->log("Mailinglist set to: $mailinglist");
+}
+elsif($ENV{GL_LIST}) {
+	$mailinglist = $ENV{GL_LIST};
+};
+
+my $in_header = 1;
+my $sender = undef;
+
+my @cmds;
+
+while(<STDIN>) {
+	chomp;
+	if($in_header) {
+		if(/^$/) {
+			$in_header = 0;
+		}
+		else {
+			if(/^From:\s+(.+?)$/) {
+				$sender = $rw->parse_from($1);
+			};
+		};
+	}
+	else {
+		last if ($_ eq '-- ');
+		last if ($_ =~ /^\s*end(\s+|$)/);
+		tr/ //d;
+		push(@cmds, $_);
+	};
+};
+
+foreach my $command (@cmds) {
+	my @argv = split(/\s+/, $command);
+	if($argv[0] eq 'subscribe') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		my $list = $mailinglist;
+		$list ||= $argv[2];
+
+		$adm->subscribe($addr, $list, $sender);
+	}
+	elsif($argv[0] eq 'unsubscribe') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		my $list = $mailinglist;
+		$list ||= $argv[3];
+		$argv[3] ||= $list;
+
+		$adm->unsubscribe($addr, $argv[2], $list, $sender);
+	}
+	elsif($argv[0] eq 'disable') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		my $list = $mailinglist;
+		$list ||= $argv[3];
+		$argv[3] ||= $list;
+		
+		$adm->disable($addr, $argv[2], $list, $sender);
+	}
+	elsif($argv[0] eq 'enable') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		my $list = $mailinglist;
+		$list ||= $argv[3];
+		$argv[3] ||= $list;
+		
+		$adm->enable($addr, $argv[2], $list, $sender);
+	}
+	elsif($argv[0] eq 'auth') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		my $list = $mailinglist;
+		$list ||= $argv[5];
+
+		# Generate a new password if no password given
+		if($argv[3] eq '<my-password>') {
+			$argv[3] = $adm->gen_session_id();
+			$argv[4] = $argv[3];
+		};
+
+		$adm->auth($addr, $argv[2], $argv[3], $argv[4], $list, $sender);
+	}
+	elsif($argv[0] eq 'info') {
+		my $list = $mailinglist;
+		$list ||= $argv[1];
+		$adm->info($list, $sender);
+	}
+	elsif($argv[0] eq 'remind') {
+		my $addr = $argv[1];
+		$addr ||= $sender;
+
+		$adm->remind($addr, $sender);
+	}
+	elsif($argv[0] eq 'help') {
+		$adm->help($sender);
+	};
+};
+
+exit 0;
+__END__				

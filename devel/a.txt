@@ -1,0 +1,104 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+print check_attachments($ARGV[0]);
+
+sub check_attachments {
+	my $file = shift;
+
+	my $in_header = 1;
+	my $boundary = undef;
+	my $attachment_count = 0;
+	my %non_text_att;
+	my $in_content_type = 0;
+	my $in_att_header = 0;
+	my $in_att_body = 0;
+	my $curr_not_valid = 0;
+	my @header;
+	my %attachments;
+	my $message;
+
+	my $MAX_SIZE = 1000;
+	my $DELETE_NON_TEXT = 0;
+
+	open(MSG, $file) || die;
+	while(<MSG>) {
+		chomp;
+		if($in_header) {
+			push(@header, $_);
+			if(/^$/) {
+				$in_header = 0;
+			}
+			elsif(/^Content-Type: /) {
+				$in_content_type = 1;
+				if(/^Content-Type:.*?boundary="(.+?)".*?$/) {
+					$boundary = $1;
+				}
+			}
+			elsif($in_content_type == 1) {
+				if(/^\s+/) {
+					if(/^\s+.*?boundary="(.+?)".*?$/) {
+						$boundary = $1;
+					}
+				}
+				else {
+					$in_content_type = 0;
+				}
+			}
+		}
+		else {
+			last unless $boundary;
+			last if ($_ eq "--$boundary--");
+			if($_ eq "--$boundary") {
+				$attachment_count++;
+				push(@{$attachments{$attachment_count}}, "\n");
+				$in_att_body = 0;
+				$in_att_header = 1;
+				$curr_not_valid = 0;
+			}
+			elsif($in_att_header == 1) {
+				if(/^$/) {
+					$in_att_header = 0;
+					$in_att_body = 1;
+				}
+				else {
+					if(/Content-type:\s+/i) {
+						unless(/^Content-type:.*?text\/plain.*?$/i) {
+							$curr_not_valid = 1;
+						};
+					};
+				};
+			}
+			elsif($in_att_body == 1) {
+				if($curr_not_valid) {
+					$non_text_att{$attachment_count} += length;
+				};
+			};	
+			push(@{$attachments{$attachment_count}}, $_);
+		};
+	};
+	close(MSG);	
+
+	foreach my $att_no (keys %non_text_att) {
+		$non_text_att{$att_no} = sprintf("%.4f", $non_text_att{$att_no} / 1024);
+		if($non_text_att{$att_no} > $MAX_SIZE) {
+			delete $attachments{$att_no};
+		}
+		elsif($DELETE_NON_TEXT == 1) {
+			delete $attachments{$att_no};
+		};
+	};
+
+	$message = join("\n", @header);
+	$message .= "\n";
+	foreach my $att_no (sort { $a <=> $b } keys %attachments) {
+		next unless $att_no;
+		$message .= join("\n", @{$attachments{$att_no}});
+	};
+	$message .= "\n--$boundary--\n\n";
+
+	return $message;
+};
+	
+		

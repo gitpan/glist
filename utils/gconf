@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*       gconf
+* PURPOSE
+*       Get configuration values from glist.config
+* AUTHORS
+*       Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+use lib '@@INCLUDE@@';
+use strict;
+use Glist;
+
+my $PREFIX = '@@PREFIX@@';
+
+my $gl = Glist::new (prefix=>$PREFIX);
+my $config = $gl->gconf();
+
+my $progname = $0;
+$progname =~ s%.*/%%;
+
+unless(@ARGV) {
+	printf STDERR "gconf (glist %s)\n", $gl->version->extended;
+	printf STDERR "Usage: %s {var} <configblock>\n", $progname;
+	exit 1;
+};
+
+my $configkey = shift @ARGV;
+my $configblock = shift @ARGV || 'global';
+
+if($configkey eq 'version') {
+	printf "%s\n", $Glist::VERSION;
+	exit 0;
+};
+if($configkey eq 'versioninfo') {
+	printf "%s\n", $gl->version->extended;
+	exit 0;
+};
+
+unless(defined $config->{$configblock}) {
+	printf STDERR "No such configblock: %s\n", $configblock;
+	exit 1;
+};
+unless(defined $config->{$configblock}{$configkey}) {
+	printf STDERR ("No such configuration key %s in %s\n", $configkey, $configblock);
+	exit 1;
+};
+
+printf "%s\n", $config->{$configblock}{$configkey};
+
+__END__

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+if [ ! "$*" ]
+then
+	echo "Missing config filename"
+	exit 1;
+fi
+
+if [ -f "/etc/HOSTNAME" ]
+then
+	HOSTNAME=`cat /etc/HOSTNAME`;
+else
+	HOSTNAME=`hostname --fqdn`
+fi
+
+perl -pi -e"s%@\@HOSTNAME\@@%${HOSTNAME}%g;" $1;
+perl -pi -e"s%@\@PREFIX\@@%${2}%g;" $1;

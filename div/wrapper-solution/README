@@ -1,0 +1,23 @@
+GLIST WRAPPERS
+=======================================================================
+
+This is for those who don't have a working suidperl.
+Just do:
+
+	make
+	make install
+
+and change the alias stuff to:
+
+glist:		"|/opt/glist/bin/gdefer-wrapper"
+glist-request: 	"|/opt/glist/bin/gcmd-wrapper"
+list:		"|/opt/glist/bin/gfetch-wrapper list@list.org"
+list-request:	"|/opt/glist/bin/gcmd-wrapper list@list.org"
+
+that should be about it.
+
+If you have mounted anything nosuid, you can
+change the PREFIX in the Makefile to somewhere you can run suid.
+
+If you have installed glist somewhere else than /opt/glist
+you can change this in include/glist.h

@@ -1,0 +1,85 @@
+
+sub gtr_setprio {
+	my($self, $filename, $prio) = @_;
+	my $glist = $self->glist();
+	my $iopenedq = 0;
+
+	if($prio > 5 || $prio < -5) {
+		$glist->error("Illegal priority, must be between -5 and +5");
+		return undef;
+	}
+
+	unless($self->queue()) {
+		$self->openqueue or return undef;
+		$iopenedq++;
+	}
+	my $queue = $self->queue();
+
+	my $is_ref = $self->is_ref($filename);
+	return undef if $is_ref < 0;
+	if($is_ref) {
+		return $self->gtr_setprio($is_ref, $prio);
+	}
+	my $pic = 0; # place in queue.
+	my $tic = 1; # total in queue, (start on 1, not 0)
+	my $nch = 0; # number of chunks of <= 10 each.
+	my $ptb = 0; # our new wanted position in the q.
+	my @sorted = sort {$a <=> $b} keys %$queue;
+	for(my $qe = 0; $qe < scalar @sorted; $qe++) {
+		if($sorted[$qe] eq $filename) {
+			$pic = $qe + 1;
+		}
+		$tic++;
+	};
+	$tic < 10 ? $nch = 1 : $nch = ceil($tic / 10);
+	$ptb = floor($prio * $nch + $pic);
+	$ptb = 1 if $ptb <= 0;
+
+	# already at wanted position
+	return 1 if $pic == $ptb;
+
+	my $c_pic = $pic;	# current place in queue.
+	my $runs = 0;		# how many tries
+	my $maxruns = 100;	# only try 100 times.
+	my @todelete;		# entries to delete after test.
+	my $newfile = $filename;
+	print "Place in queue started on $pic\n";
+	print "Now i'll try to get to $ptb ...\n";
+	PIC:
+	until($c_pic == $ptb) {
+		$ptb > $pic ? $newfile++ : $newfile--;
+		print "Renaming $filename to $newfile...\n";
+		$self->gtr_rename($filename, $newfile)
+			or return undef;
+		my @sorted = sort {$a <=> $b} keys %$queue;
+		QENT:
+		for(my $qe = 0; $qe < scalar @sorted; $qe++) {
+			# skip references
+			my($s,$p,$h,$r) = split /\|/, $queue->{$sorted[$qe]}, 4;
+			next QENT if $r;
+			next QENT if grep $sorted[$qe], @todelete;
+			# is this the one?	
+			if($sorted[$qe] eq $newfile) {
+				$c_pic = $qe + 1;
+				print "Place in queue is now: $c_pic\n";
+			}
+		}
+		$runs++;
+		push(@todelete, $newfile) if $c_pic != $ptb;
+		last PIC if $runs == $maxruns;
+	}
+	print "I end up with $newfile\n";
+	# Delete the test entries...
+	foreach(@todelete) {
+		delete $queue->{$_};
+	}
+	# ###
+	# ...and set the reference for $filename 
+	# to the new filename
+	my @ent = split /\|/, $queue->{$filename}, 4;
+	$ent[3] = $newfile;
+	$queue->{$filename} = join "\|", @ent;
+	
+	$self->closequeue if $iopenedq;
+	return 1;
+}

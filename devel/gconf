@@ -1,0 +1,35 @@
+#!/usr/bin/perl
+
+use lib '@@INCLUDE@@';
+use strict;
+use Glist;
+
+my $PREFIX = '@@PREFIX@@';
+
+my $gl = Glist::new (prefix=>$PREFIX);
+my $config = $gl->gconf();
+
+my $progname = $0;
+$progname =~ s%.*/%%;
+
+unless(@ARGV) {
+	printf STDERR ("gconf (glist %.2f)\n", $Glist::VERSION);
+	printf STDERR ("Usage: %s {var} <configblock>\n", $progname);
+	exit 1;
+};
+
+my $configkey = shift @ARGV;
+my $configblock = shift @ARGV || 'global';
+
+unless(defined($config->{$configblock})) {
+	printf STDERR ("No such configblock: %s\n", $configblock);
+	exit 1;
+};
+unless(defined($config->{$configblock}{$configkey})) {
+	printf STDERR ("No such configuration key %s in %s\n", $configkey, $configblock);
+	exit 1;
+};
+
+printf("%s\n", $config->{$configblock}{$configkey});
+
+__END__

@@ -1,0 +1,105 @@
+=cut
+
+
+=head1 NAME
+
+
+	Glist Queue Tracking and Spool Priority
+
+=head1 WHAT
+
+	You should be able to track where a spool file is in the queue.  
+	You should also be able to put it on hold, remove it and 
+	raise/lower the priority.
+
+	A spool file can have any name and it's sorted first by 
+	alphanumeric characters then by ascending numbers.
+
+	New spool files are created with a name built up by a 
+	concatenated string of the localtime and <= 8 random digits.
+	This means that all we have to do to raise/lower
+	priority is to raise/lower the values of the filename
+	until it's the first file sorted in the list.
+
+	Sendd should check if the spoolentry is still in the
+	spooldb after each sent chunk, if not it should stop sending.
+
+=head1 WHERE
+
+	The queue information should be stored in a dbm file.
+	This file should be in var/run/queue.db.
+
+	The key in this db is the filename, and the value
+	is split up by pipes ('|') and has the following syntax:
+
+=over 4
+
+=item 	string spool|int prio|bool hold|string pointer
+
+=back
+
+	If the pointer field exists this means that this file
+	has moved and we should fetch the new filename instead.
+
+
+=head1 HOW
+
+	This is the list of functions we need to implement	
+	queue tracking and priorities in glist.
+
+=over 4
+
+=item	bool gtr_introduce(string filename)
+
+	Introduce a new file in the queue. Returns true if 
+	successful and false if there is already a file with 
+	this name in the queue.
+
+=item	string gtr_setpos(string filename, string spool)
+	
+	Move the file to a new queue.
+	Returns the new queuename.
+
+=item	string gtr_rename(string old, string new)
+	
+	Rename a file. Should also be used by gtr_raise and gtr_lower
+	as well. The old queuedb entry is not deleted, but we make a pointer
+	to the new one instad.
+	Returns the new filename.
+
+=item	string gtr_getpos(string filename);
+
+	Get the current position of a spoolfile, should follow
+	pointers as well.
+
+=item	string gtr_raise(string filename);
+	
+	Raise the priority of a file by renaming it so it
+	will be the first in the sort algo.
+
+=item	string gtr_lower(string filename);
+
+	Lower the priority of a file by renaming it so it
+	will be the last in the sort algo.
+
+=item	bool gtr_delete(string filename);
+
+	Delete a file in the queue.
+
+=item	bool gtr_stop(string filename);
+	
+	Put a file on hold. That means moving it to the hold queue,
+	and setting the hold flag.
+
+=item	bool gtr_restart(string filename);
+
+	Move the file out of the hold queue into it's previous queue
+	and unset the hold flag.
+=back
+
+
+=head1 AUTHOR
+
+	Ask Solem Hoel <ask@unixmonks.net>
+
+=cut

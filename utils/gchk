@@ -1,0 +1,748 @@
+#!/usr/bin/perl
+
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*       gchk
+* PURPOSE
+*       Check glists configuration files
+* AUTHORS
+*       Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+use strict;
+use lib '@@INCLUDE@@';
+use Glist;
+require 5;
+$| = 1;
+
+my $PREFIX = '@@PREFIX@@';
+my $gl = Glist::new(prefix=>$PREFIX);
+
+printf("Glist version... %s\n", $Glist::VERSION);
+
+check_superuser() or exit 1;
+check_config() or exit 1;
+
+sub check_superuser {
+	printf "Checking effective uid... ";
+	if(!$> || $> < 0) { # $> = $EUID
+		print "\nDo not run glist as root!\n";
+		return undef;
+	}
+	else {
+		print "OK!\n";
+		return 1;
+	};
+};
+
+
+sub check_config {
+	my $config_file = shift;
+	$config_file ||= $gl->config();
+
+	my $line_no = 0;
+	my $in_block = 0;
+	my $left_bracket_count = 0;
+	my $right_bracket_count = 0;
+	my $err_count = 0;
+	my $line = undef;
+	my $never_die;
+	my @errors;
+
+	my $config_basename = $config_file;
+	$config_basename =~ s%.*/%%;
+
+	printf("Checking configuration in %s... ", $config_basename);
+	open(CONFIG, $config_file) || die "Couldn't open config: $!\n";
+	LINE:
+	while($line = <CONFIG>) {
+		$line_no++;
+		chomp($line);
+		next LINE if $line =~ /^\s*#/;
+		next LINE if $line =~ /^\s*\/\//;
+		next LINE if $line =~ /^\s*$/;
+
+	
+		if($in_block == 1) {
+			if($line =~ /^\s*};?\s*$/) {
+				$left_bracket_count++;
+				$in_block = 0;
+			}
+			else {
+				if($line =~ /^\s*(.+?)\s+(.+?)\s*$/) {
+					my $dir = $1;
+					my $value = $2;
+					if($dir eq 'include' || $dir eq 'require') {
+						if($dir eq 'require') {
+							unless(-f $value) {
+							  push(@errors, "\t* Error at line $line_no: Error in require: $value: $!\n");
+							  $err_count++;
+							  next LINE;
+							};
+						};
+						if(-f $value) {
+							my $inc_line_no = 0;
+							$never_die = 1; # never die in includes.
+							open(INCLUDE, $value) || next LINE;
+							INC:
+							while(<INCLUDE>) {
+								$inc_line_no++;
+								chomp;
+								next INC if /^\s*#/;
+								next INC if /^\s*\/\//;
+								next INC if /^\s*$/;
+								if(/^\s*(.+?)\s+(.+?)\s*$/) {
+									my $inc_dir = $1;
+									my $inc_value = $2;
+									unless(check_config_name($inc_dir, $inc_value, $inc_line_no, \$err_count, \@errors, $never_die)) {
+										push(@errors, "\t* Error at line $inc_line_no in included file $value:  Unknown configuration key: $inc_dir\n");
+									};
+								}
+								else {
+									push(@errors, "\t* Error at line $inc_line_no in included file $value: Unknown configuration entry\n");
+								};
+							};
+							close(INCLUDE);
+							$never_die = 0;
+						};
+					}
+					else {
+						unless(check_config_name($dir, $value, $line_no, \$err_count, \@errors)) {
+							push(@errors, "\t* Error at line $line_no: Unknown configuration key: $dir\n");
+							$err_count++;
+						};
+					};
+				}
+				else {
+					push(@errors, "\t* Error at line $line_no: Unknown configuration entry\n");
+					$err_count++;
+				};
+			};
+		}
+		elsif($line =~ /^\s*(.+?)\s+(.+?)\s*{\s*$/) {
+			$in_block = 1;
+			$right_bracket_count++;
+			my $block_name = $1;
+			my $block_value = $2;
+			unless(check_block_name($block_name)) {
+				push(@errors, "\t* Error at line $line_no: Unknown block name: $block_name\n");
+				$err_count++;
+			};
+		}
+		else {
+			if($line =~ /}/) {
+				$left_bracket_count++;
+			}
+			elsif($line =~ /{/) {
+				$right_bracket_count++;
+			}
+			elsif($line =~ /^\s*alias\s+(.+?)\s+(.+?)\s*$/) {
+				my $alias = $1;
+				my $original = $2;
+			}
+			else {
+				push(@errors, "\t* Error at line $line_no: Statement not allowed outside block.\n");
+				$err_count++;
+			};
+		};
+	};
+	close(CONFIG);
+
+
+	if($right_bracket_count > $left_bracket_count) {
+		push(@errors, "\t* Error in configuration: Missing left bracket at EOF\n");
+		$err_count++;
+	};
+
+	if($right_bracket_count < $left_bracket_count) {
+		push(@errors, "\t* Error in configuration: Missing right bracket at EOF\n");
+		$err_count++;
+	};
+
+	if(@errors) {
+		print "\n";
+		foreach my $err (@errors) {
+			print STDERR $err;
+		};
+		if($err_count) {
+			print STDERR "Found $err_count error(s) in configuration!\n";
+			return undef;
+		}
+		else {
+			return 1;
+		};
+	}
+	else {
+		print "OK!\n";
+		return 1;
+	}
+}
+
+sub check_block_name() {
+	my $block_name = shift;
+	my @legal_block_names = ('list');
+
+	foreach my $bln (@legal_block_names) {
+		return 1 if($block_name eq $bln);
+	}
+
+	return undef;
+}
+
+sub check_config_name() {
+	my $dir = shift;
+	my $value = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+
+	my %checks = (
+		owner		=> \&check_owner,
+		send_allow	=> \&check_send_allow,
+		push_list_id	=> \&check_push_list_id,
+		database	=> \&check_database,
+		server		=> \&check_server,
+		type		=> \&check_type,
+		file		=> \&check_file,
+		sender		=> \&check_sender,
+		subject_prefix	=> \&check_subject_prefix,
+		admin		=> \&check_admin,
+		hostname	=> \&check_hostname,
+		hide_sender	=> \&check_hide_sender,
+		reply_to	=> \&check_reply_to,
+		recipient	=> \&check_recipient,
+		blacklist	=> \&check_blacklist,
+		size_limit	=> \&check_size_limit,
+		daemon_args	=> \&check_daemon_args,
+		header		=> \&check_header,
+		footer		=> \&check_footer,
+		hello_file	=> \&check_hello_file,
+		bye_file	=> \&check_bye_file,
+		request		=> \&check_request,
+		info		=> \&check_info,
+		adm_by_mail	=> \&check_adm_by_mail,
+		sql_query	=> \&check_sql_query,
+		allow_attachments => \&check_allow_attachments,
+		attachment_size_limit => \&check_attachment_size_limit,
+		need_approval	=> \&check_need_approval,
+		moderators	=> \&check_moderators,
+		header_checks	=> \&check_header_checks,
+		body_checks	=> \&check_body_checks,
+		allow_subscribe	=> \&check_allow_subscribe,
+		content_checks	=> \&check_content_checks,
+		content_deny	=> \&check_content_deny,
+		fatal_handler	=> \&check_handler,
+		pickup_handler	=> \&check_handler,
+		rewrite_handler	=> \&check_handler,
+		send_handler	=> \&check_handler,
+		bounce_handler	=> \&check_handler,
+		log_handler	=> \&check_handler,
+		pickup_start_action => \&check_handler,
+		pickup_end_action => \&check_handler,
+		rewrite_start_action => \&check_handler,
+		rewrite_end_action => \&check_handler,
+		send_start_action => \&check_handler,
+		send_end_action => \&check_handler,
+		bounce_start_action => \&check_handler,
+		bounce_end_action => \&check_handler,
+		log_start_action => \&check_handler,
+		log_end_action => \&check_handler,
+		send_summary_on	=> \&check_send_summary_on,
+		send_summary_to => \&check_send_summary_to,
+	);	
+
+	return undef unless $checks{$dir};
+	$checks{$dir}->($value, $line, $r_err_no, $r_errors);
+
+	return 1;
+}
+
+sub is_email {
+	my $email = shift;
+        if($email =~    /
+                ^(
+                    [\w\d\_\-\!\.]{1,64}        # word with alphanumerics, digits, _, - and !
+                                                # not longer than 64 chars.
+                    (\@                         # and if it's not local (has an @ after username)
+                        [\w\d\.\-\_]{1,255}\.   # and a Fully Qualified Host Name
+                        [\w]{2,4}               # and a TLD of atlest 2 but not more than 4 char(s)
+                    )?
+                )$/x
+	) { return 1 };
+
+	return undef;
+}
+
+sub is_file {
+	my $file = shift;
+	if(-f $file) {
+		return 1;
+	}
+	return undef;
+}
+
+sub is_hostname {
+	my $hostname = shift;
+	if($hostname =~ /[\w\d\-\_.]+/) {
+		return 1;
+	};
+	return undef;
+};
+
+sub check_owner {
+	my $owner = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_email($owner)) {
+		push(@$r_errors, "\t* Error at line $line: Invalid owner: $owner\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_send_allow {
+	my $send_allow = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	return 1;
+	foreach my $email (split(/\s*,\s*/, $send_allow)) {
+		unless(is_email($email)) {
+			push(@$r_errors, "\t* Error at line $line: Invalid send_allow address: $email\n");
+			$$r_err_no++ unless $never_die;
+		};
+	};
+	return 1;
+};
+
+sub check_moderators {
+	my $moderators = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	foreach my $moderator (split(/\s*,\s*/, $moderators)) {
+		unless(is_email($moderator)) {
+			push(@$r_errors, "\t* Error at line $line: Invalid moderator address: $moderator\n");
+			$$r_err_no++ unless $never_die;
+		};
+	};
+	return 1;
+};
+
+sub check_push_list_id {
+	my $push_list_id = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless($push_list_id =~ /\d+/) {
+		push(@$r_errors, "\t* Error at line $line: push_list_id must be integer\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_database {
+	return 1;
+};
+
+sub check_server {
+	my $server = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_hostname($server)) {
+		push(@$r_errors, "\t* Error at line $line: Server must be FQDN\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_type {
+	my $type = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(($type =~ /sql/) || ($type eq 'file')) {
+		push(@$r_errors, "\t* Error at line $line: Unknown list type\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_file {
+	my $file = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_file($file)) {
+		push(@$r_errors, "\t* Error at line $line: No such file '$file'\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_sender {
+	my $sender = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_email($sender)) {
+		push(@$r_errors, "\t* Error at line $line: Illegal sender address\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_admin {
+	my $admin = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_email($admin)) {
+		push(@$r_errors, "\t* Error at line $line: Illegal admin address\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+	
+
+sub check_subject_prefix {
+	return 1;
+};
+
+sub check_blacklist {
+	return 1;
+};
+
+sub check_hostname {
+	my $hostname = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_hostname($hostname)) {
+		push(@$r_errors, "\t* Error at line $line: Hostname must be FQDN\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_hide_sender {
+	my $hide_sender = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(($hide_sender eq 'yes') || ($hide_sender eq 'no')) {
+		push(@$r_errors, "\t* Error at line $line: Hide_sender must be yes or no\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_recipient {
+	my $recipient = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_email($recipient)) {
+		push(@$r_errors, "\t* Error at line $line: Recipient is not a valid address\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_reply_to {
+	my $reply_to = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_email($reply_to)) {
+		push(@$r_errors, "\t* Error at line $line: Reply_to is not a valid address\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_size_limit {
+	my $size_limit = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless($size_limit =~ /\d+/) {
+		push(@$r_errors, "\t* Error at line $line: size_limit must be integer\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_daemon_args {
+	return 1;
+};
+
+sub check_header {
+	my $header = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(-f $header) {
+		push(@$r_errors, "\t* Error at line $line: No such header file: $header\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_footer {
+	my $footer = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(-f $footer) {
+		push(@$r_errors, "\t* Error at line $line: No such footer file: $footer\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_hello_file {
+	my $hello_file = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(-f $hello_file) {
+		push(@$r_errors, "\t* Error at line $line: No such hello_file: $hello_file\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_bye_file {
+	my $bye_file  = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(-f $bye_file) {
+		push(@$r_errors, "\t* Error at line $line: No such bye_file: $bye_file\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_info {
+	my $info   = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(-f $info ) {
+		push(@$r_errors, "\t* Error at line $line: No such info file: $info\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_request {
+	return 1;
+};
+
+sub check_adm_by_mail {
+	my $adm_by_mail = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless($adm_by_mail eq 'yes' || $adm_by_mail eq 'no') {
+		push(@$r_errors, "\t* Error at line $line: adm_by_mail can only be yes or no.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_sql_query {
+	return 1;
+};
+
+sub check_attachment_sixe_limit {
+	my $attachment_size_limit = shift;
+	my $line = shift;	
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless($attachment_size_limit =~ /\d+/) {
+		push(@$r_errors, "\t* Error at line $line: attachment_size_limit must be int.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_allow_attachments {
+	my $allow_attachments = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless($allow_attachments eq 'yes' || $allow_attachments eq 'no') {
+		push(@$r_errors, "\t* Error at line $line: allow_attachments must be yes or no.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_need_approval {
+	my $need_approval = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	foreach my $need_approve (split(/\s*,\s*/, $need_approval)) {
+		unless(
+			$need_approve eq 'posts' ||
+			$need_approve eq 'subscription' ||
+			$need_approve eq 'all' 
+		) {
+			push(@$r_errors, "\t* Error at line $line: unknown need_approval entry.\n");
+			$$r_err_no++ unless $never_die;
+		};
+	};
+	return 1;
+};	
+
+sub check_header_checks {
+	my $header_checks = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_file($header_checks)) {
+		push(@$r_errors, "\t* Error at line $line: No such file $header_checks.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_body_checks {
+	my $body_checks = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	unless(is_file($body_checks)) {
+		push(@$r_errors, "\t* Error at line $line: No such file $body_checks.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_allow_subscribe {
+	return 1;
+};
+
+sub check_content_checks {
+	return 1;
+};
+
+sub check_content_deny {
+	return 1;
+};
+
+sub check_handler {
+	my $handler = shift;
+	my $line = shift;
+	my $r_err_no = shift;
+	my $r_errors = shift;
+	my $never_die = shift;
+	
+	eval("use $handler;");
+	if($@) {
+		push(@$r_errors, "\t* Error at line $line: Couldn't load handler $handler: $@.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+};
+
+sub check_send_summary_to {
+	my($send_summary_to, $line, $r_err_no, $r_errors, $never_die) = @_;
+	unless(is_email($send_summary_to)) {
+		push(@$r_errors, "\t* Errot at line $line: Illegal email $send_summary_to.\n");
+		$$r_err_no++ unless $never_die;
+		return undef;
+	};
+	return 1;
+}
+
+sub check_send_summary_on {
+	my($send_summary_on, $line, $r_err_no, $r_errors, $never_die) = @_;
+	my %sso   = map {$_ => 1} split /\s*,\s*/, $send_summary_on;
+	my %v_sso = map {$_ => 1} qw(all error success);
+	foreach my $sso (keys %sso) {
+		unless($v_sso{$sso}) {
+			push(@$r_errors, "\t* Error at line $line: Invalid send_summary_on action $sso.\n");
+			$$r_err_no++ unless $never_die;
+		}
+	}
+	return 1;
+}
+
+sub always_ok { 1 };
+
+__END__

@@ -1,0 +1,87 @@
+**** THIS IS NOT YET IMPLEMENTED AND IS ONLY ITS SPESIFICATION ****
+
+Approvement is done by the approved daemon and it uses the Approve.pm module.
+If rewrited or gcmd finds a message that needs approval it will send it
+to the approveq mail spool.
+
+When approved finds a new message it will give it a new unique message id
+and store it in the PREFIX/var/run/approve.db database.
+Then it passes the mail as an attachment to all moderators, if one
+of these moderators sends this e-mail back, the message id will be marked
+as sent and all new approvals of this message will be ignored (since it's
+already sent)
+
+The approve db will have these fields:
+
+key: id	
+value: localtime|status(WAIT/SENT/EXPIRED)|expire|list|approve type(POST/SUBSCRIPTION)
+
+If the message has been in the queue longer than MAX_DAYS_IN_APPROVEQ
+it's id and message file will be deleted.
+
+The approveq should store its files in folders with the name of the lists.
+Example the message with id 100100 in the list glist@glist.org 
+will have a full path of:
+
+PREFIX/spool/approveq/glist@glist.org/100100
+
+We need several functions for this:
+
+approveq_get_next_id()			# Get the next available message id
+approveq_delete(ref mdb_obj) 		# Delete a message in the queue by it's id
+approveq_expire(ref msg_obj)		# Expire a message in the queue
+approveq_send(ref msg_obj)		# Send a message in the queue
+approveq_add(int id, char list)		# Add a new message to the queue.
+approveq_get_type(ref msg_obj)		# Get an id's approve type
+approveq_get_status(ref msg_obj)	# Get an id's status
+approveq_is_expired(ref msg_obj)	# Check if a message has expired.
+approveq_get_list(ref msg_obj)		# Get the list of a message id.
+approveq_study(int id)			# Get all fields of a id, and return it into a hash.
+
+Messages are recognized by an message id in the subject.
+
+Example request for approval:
+
+From: glist-approve@bar
+To: moderator1@foo, moderator2@bar
+Subject: [#mid=100100] Original Subject
+X-Mid: 100100
+Content-type: multipart/mixed; boundary="ikeVEW9yuYc//A+q"
+Content-Disposition: inline
+Content-Transfer-Encoding: 8bit
+
+--ikeVEW9yuYc//A+q
+Content-Type: text/plain; charset=iso-8859-1
+Content-Disposition: inline
+Content-Transfer-Encoding: 8bit
+
+*** REQUEST FOR APPROVAL ***
+
+The message attached has been sent to <list>.
+If you want this message to be approved and posted to <list>, 
+just reply to this mail.
+
+If you decline the approval of this message, just leave it
+and it will be deleted from the approve queue in <max-days-in-approveq>.
+
+When replying, please be sure that the mid (message id) part of the
+subject is intact, this is how we keep track of the message so
+if it's not included the message will be ignored.
+
+Message follows as attachment #2.
+
+--ikeVEW9yuYc//A+q
+Content-Type: message/rfc822; charset=iso-8859-1
+Content-Disposition: inline
+Content-Transfer-Encoding: 8bit
+
+From: blabla
+To: list
+
+<original message>
+
+--ikeVEW9yuYc//A+q--
+
+The mail will be only be approved if the mail returned is from one of the moderators,
+and the mid part of the subject is intact and valid.
+

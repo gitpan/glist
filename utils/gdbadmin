@@ -1,0 +1,452 @@
+#!/usr/bin/perl
+
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*	gdbadmin
+* PURPOSE
+*	Console administration utility for the RDBMS password
+*	database.
+* AUTHORS
+*	Ask Solem Hoel, <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+use strict;
+use lib '@@INCLUDE@@';
+use Glist;
+use Glist::Admin;
+use Fcntl qw(:flock);
+
+my $PREFIX = '@@PREFIX@@';
+
+package main;
+my $glist = Glist::new(prefix=>$PREFIX,daemon=>1);
+defined @ARGV or help(), exit;
+gdb_do(\@ARGV);
+print "All OK!\n";
+exit 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ############### 
+# ------------------------------------------------------------------------ #
+
+sub help {
+	my $myself = $0;
+	$myself =~ s%.*/%%;
+	printf STDERR "$myself (glist %s)\n",
+		$glist->version->extended();
+	print  STDERR "Usage: \`$myself [action] [action arguments]'\n";
+	print <<"	EOF"
+
+Database actions:
+  -L,--list		List entries.
+  -A,--add		Add entry. Requires server, db, uname, pw and type options.
+  -D,--del,--delete	Delete entry. Requires serer, db and uname options.
+  -U,--update		Update entry. Needs all arguments, can only change pw.
+
+Command arguments:
+  -s,--server		Hostname for database server.
+  -d,--db,--database	Database name for this database.
+  -u,--uname,--username	Username for this database.
+  -p,--pw,--password	Password for this database user.
+  -t,--type		RDBMS Type
+  -v,--verbose		Print verbose messages.
+
+Examples:
+
+List all entries
+% $myself -L
+
+List all entries with server localhost
+% $myself -L -s localhost
+
+Add a new entry:
+% $myself -A -s localhost -d mydb -u username -p password -t pgsql
+
+Delete a entry:
+% $myself -D -s localhost -d mydb -u username
+
+Update password on entry:
+% $myself -U -s localhost -d mydb -u username -p new_pw
+
+	EOF
+	;	
+
+}
+
+sub gdb_do {
+	my $argv = shift;
+	my $argc = scalar @$argv;
+	my $gdba = new Gdbadmin($glist);
+	while($_ = shift @$argv) {
+		next unless length;
+		if(	/^(-D|--Del(ete)?)/) {
+			error("Action already defined near argument '$_'")
+				if $gdba->cmd();
+			$gdba->cmd("delete");
+		}
+		elsif(	/^(-A|--Add)/) {
+			error("Action already defined near argument '$_'")
+				if $gdba->cmd();
+			$gdba->cmd("add");
+		}
+		elsif(	/^(-U|--Update)/) {
+			error("Action already defined near argument '$_'")
+				if $gdba->cmd();
+			$gdba->cmd("update");
+		}
+		elsif(	/^(-L|--List)/) {
+			error("Action already defined near argument '$_'")
+				if $gdba->cmd();
+			$gdba->cmd("list");
+		}
+		elsif(	/^(-s|--server)/) {
+			$gdba->server(shift @$argv);
+		}
+		elsif(	/^(-d|--db)/) {
+			$gdba->db(shift @$argv);
+		}
+		elsif(	/^(-u|--uname|--user(name)?)/) {
+			$gdba->uname(shift @$argv);
+		}
+		elsif(	/^(-p|--pw|--pass(word)?)/) {
+			$gdba->pw(shift @$argv);
+		}
+		elsif(	/^(-t|--type)/) {
+			$gdba->type(shift @$argv);
+		}
+		elsif(	/^(-v|--verbose)/) {
+			$gdba->verbose(1);
+		}
+		else {
+			error("Illegal argument near '$_'");
+		}
+	}	
+	unless($gdba->cmd()) {
+		error("Please specify command -- -A add, -D delete, -U update, -L list");
+	}
+	$gdba->go() or error($gdba->error());
+}
+
+sub error {
+	my $msg = shift;
+	print $msg, "\n" if defined $msg;
+	exit 1;
+}
+
+# ############### 
+# ------------------------------------------------------------------------ #
+
+package Gdbadmin;
+use Fcntl qw(:flock);
+
+sub new { 
+	my $self = shift;
+	my $glist = shift;
+	my $obj = { };
+	bless $obj, $self;
+	my $adm = $glist->Glist::Admin::new();
+	$obj->glist($glist);
+	$obj->adm($adm);
+	$obj->passwd($glist->passwd());
+	return $obj;
+}
+
+sub go {
+	my $self = shift;
+	if(	$self->cmd() eq 'add') {
+		foreach(qw(server db uname pw type)) {
+			unless($self->{uc $_}) {
+				$self->error("Missing $_ argument to -A");
+				return undef;
+			}
+		}
+		$self->gdb_store() or return undef;
+	}
+	elsif(	$self->cmd() eq 'delete') {
+		foreach(qw(server db uname)) {
+			unless($self->{uc $_}) {
+				$self->error("Missing $_ argument to -D");
+				return undef;
+			}
+		}
+		$self->gdb_destroy() or return undef;
+	}
+	elsif(	$self->cmd() eq 'update') {
+		foreach(qw(server db uname)) {
+			unless($self->{uc $_}) {
+				$self->error("Missing $_ argument to -U");
+				return undef;
+			}
+		}
+		$self->gdb_update() or return undef;
+	}
+	elsif(	$self->cmd() eq 'list') {
+		$self->gdb_list() or return undef;
+	}
+	return 1;
+}
+sub gdb_list {
+	my $self = shift;
+	my $data = $self->gdb_fetch(
+		server	=> $self->server(),
+		db	=> $self->db(),
+		uname	=> $self->uname(),
+		type	=> $self->type(),
+	) or $self->error("No matches") && return undef;
+	my($server, $db, $uname, $pw, $type);
+
+format GDBLISTTOP =
+
+DB Server	DB Name		DB User		DB Passwd	DB Type
+===============================================================================
+.
+
+format GDBLIST =
+@<<<<<<<<<<<<<< @<<<<<<<<<<<<<< @<<<<<<<<<<<<<< @<<<<<<<<<<<<<< @<<<<<<<<<<<<<
+$server,	$db,		$uname,		$pw,		$type
+.
+
+	$^ = 'GDBLISTTOP';
+	$~ = 'GDBLIST';
+	my $elno = scalar @$data;
+	print STDERR "SELECT $elno\n" if $self->verbose();
+	foreach(sort @$data) {
+		($server, $db, $uname, $pw, $type) = @$_;
+		write;
+	}
+	print "\n" if $elno;
+}
+
+sub gdb_store {
+	my $o = shift;
+	if($o->gdb_fetch(server=>$o->server,db=>$o->db,uname=>$o->uname,type=>$o->type)) {
+		$o->error("Error: Entry with this information is already there.");
+		return undef;
+	}
+	open(F, sprintf(">>%s", $o->passwd))
+		or $o->error("Couldn't open passwd: $!") 
+		and return undef;
+	flock(F, LOCK_SH) 
+		|| $o->error("Couldn't create lock for paswd") 
+		&& return undef;
+	print F join(":", $o->server, $o->db, $o->uname, $o->pw, $o->type), "\n";
+	flock(F, LOCK_UN);
+	close F;
+
+	print STDERR "INSERT 1\n" if $o->verbose();
+	return 1;
+}
+
+sub gdb_update {
+	my $self = shift;
+	$self->gdb_destroy() or return undef;
+	$self->gdb_store() or return undef;
+	print STDERR "UPDATE 1\n" if $self->verbose();
+	return 1;
+}
+
+sub gdb_destroy {
+	my $self = shift;
+	my @data;
+	open(PASSWD, $self->passwd())
+		|| $self->error(sprintf("Couldn't open passwd %s: %s", $self->passwd(), $!))
+		&& return undef;
+	flock(PASSWD, LOCK_SH)
+		|| $self->error("Couldn't get lock for passwd: $!")
+		&& return undef;
+	my $match = 0;	
+	while(<PASSWD>) {
+		chomp;
+		# ignore comments
+		unless(/^\s*#/ || /^\s*\/\//) {
+			# skip this entry, if this is the entry to delete.
+			my @fields = split ':';
+			if(
+				   $fields[0] eq $self->server
+				&& $fields[1] eq $self->db
+				&& $fields[2] eq $self->uname
+			) {
+				$match++;
+				next;
+			};
+		};
+		push(@data, $_);
+	}
+	flock(PASSWD, LOCK_UN);
+	unless($match) {
+		$self->error("Cannot delete non-existing entry!");
+		return undef;
+	}
+	open(PASSWD, sprintf(">%s", $self->passwd))
+		|| $self->error(sprintf("Couldn't open passwd %s: %s", $self->passwd(), $!))
+		&& return undef;
+	flock(PASSWD, LOCK_SH)
+		|| $self->error("Couldn't get lock for passwd: $!")
+		&& return undef;
+	print PASSWD join("\n", @data), "\n";
+	flock(PASSWD, LOCK_UN);
+	close(PASSWD);	
+	print STDERR "DELETE 1\n" if $self->verbose();
+	return 1;
+}
+
+sub gdb_fetch {
+        my $self = shift;
+	my %argv = @_;
+	my @data;
+	my $argc = 0;
+	foreach(keys %argv) {
+		$argc++ if defined $argv{$_};
+	}
+        open(PASSWD, $self->passwd())
+                || $self->error(sprintf("Couldn't open passwd %s: %s", $self->passwd(), $!))
+                && return undef;
+        flock(PASSWD, LOCK_SH);
+        while(<PASSWD>) {
+                chomp;
+		my $match = 0;
+                # ignore comments
+                next if /^\s*#/;
+                next if /^\s*\/\//;
+		next unless length;
+                my @fields = split ':';
+		$fields[3] = $self->adm->decrypt($fields[3]);
+		if($argc != 0) {
+			if($argv{server}) {
+				if($fields[0] eq $argv{server}) {
+					$match++;
+				}
+			}
+			if($argv{db}) {
+				if($fields[1] eq $argv{db}) {
+					$match++;
+				}
+			}
+			if($argv{uname}) {
+				if($fields[2] eq $argv{uname}) {
+					$match++;
+				}
+			}
+			if($argv{type}) {
+				if($fields[4] eq $argv{type}) {
+					$match++;
+				}
+			}
+			if($match == $argc) {
+				push(@data, \@fields);
+			}
+		}
+		else {
+			push(@data, \@fields);	
+		}
+        }
+        flock(PASSWD, LOCK_UN);
+
+	if($argc != 0 && not defined @data) {
+		return undef;
+	}
+	else {
+		return \@data;
+	};
+};
+
+sub passwd {
+	my ($self, $passwd) = @_;
+	$self->{PASSWD} = $passwd if $passwd;
+	return $self->{PASSWD};
+}
+
+sub glist {
+	my ($self, $glist) = @_;
+	$self->{GLIST} = $glist if $glist;
+	return $self->{GLIST};
+}
+sub type {
+	my ($self, $type) = @_;
+	$self->{TYPE} = $type if $type;
+	return $self->{TYPE};
+}
+
+sub cmd {
+	my ($self, $cmd) = @_;
+	$self->{CMD} = $cmd if $cmd;
+	return $self->{CMD};
+}
+
+sub error {
+	my ($self, $error) = @_;
+	$self->{ERROR} = $error if $error;
+	return $self->{ERROR};
+}
+
+sub server {
+	my ($self, $server) = @_;
+	$self->{SERVER} = $server if $server;
+	return $self->{SERVER};
+}
+
+sub db {
+	my ($self, $db) = @_;
+	$self->{DB} = $db if $db;
+	return $self->{DB};
+}
+
+sub uname {
+	my ($self, $uname) = @_;
+	$self->{UNAME} = $uname if $uname;
+	return $self->{UNAME};
+}
+
+
+sub adm {
+	my ($self, $adm) = @_;
+	$self->{ADM} = $adm if $adm;
+	return $self->{ADM};
+}
+
+sub pw {
+	my ($self, $pw) = @_;
+	my $adm = $self->adm();
+	if($pw) {
+		$pw = $adm->encrypt($pw);
+		$self->{PW} = $pw;
+	}
+	return $self->{PW};
+}
+
+sub verbose {
+	my ($self, $verbose) = @_;
+	$self->{VERBOSE} = $verbose if $verbose;
+	return $self->{VERBOSE};
+}

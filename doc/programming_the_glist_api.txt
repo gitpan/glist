@@ -1,0 +1,116 @@
+Programming The Glist Handler API
+=================================================================
+
+The glist handler system consists of several configuration options
+which lets you set different handlers for different actions.
+Some of these configuration options can only be set in the global
+directive, but some also can be set pr. list.
+
+All of the handlers will be passed a Glist object.
+
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| configoption		| directives	| variables			|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| pickup_start_action	| global	| none				|
+| pickup_handler	| global	| message filename		|
+| pickup_end_handler	| global	| href key: file val: status	|
+| rewrite_start_action	| global	| none				|
+| rewrite_handler	| global, list	| filename			|
+| rewrite_end_action	| global	| href key: file val: status	|
+| send_start_action	| global	| none				|
+| send_handler		| global	| filename			|
+| send_end_action	| global	| href key: file val: status	|
+| bounce_start_action	| global	| none				|
+| bounce_handler	| global, list	| filename, filedata		|
+| bounce_end_action	| global	| none				|
+| log_start_handler	| global	| none				|
+| log_handler		| global	| daemonname, message, pid	|
+| log_end_handler	| global	| none				|
+| fatal_handler		| global	| message			|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+1.0 pickup handlers
+
+  1.1 Example 1 pickup_end_action handler.
+
+	Configuration:
+
+	list global {
+		pickup_start_action Glist::Pickup::LogFiles;
+	}
+
+	include/Glist/Pickup/LogFiles.pm:
+
+#!/usr/bin/perl -w
+
+package Glist::Pickup::LogFiles;
+
+use strict;
+use lib '/opt/glist/include';
+use Glist;
+
+# configuration
+my $SENDMAIL = '/usr/bin/sendmail';
+my $SENDMAIL_OPTS = '-t';
+my $RECIPIENTS = 'ask@unixmonks.net';
+
+# object constructor
+sub new {
+	return bless {}, shift;
+}
+
+sub handler
+{
+	###
+	# $g is the Glist object, $hr_files is an hashref
+	# with all the files picked up and the status of the action.
+	my ($self, $g, $hr_files) = @_;
+
+	# don't send any mail if no files where pickedup.
+	return undef unless keys %$hr_files;
+
+	# ref to access the glist configuration hash
+	my $config = $g->gconf();
+
+	# get our hostname from the configuration
+	my $hostname = $config->{global}{hostname};
+
+	my $date = localtime;
+
+	open SENDMAIL, "|$SENDMAIL", $SENDMAIL_OPTS
+		or $g->error("pickup_start_action: Couldn't open sendmail: $!")
+		and return undef;
+
+	my $message = "";
+	# message header
+	$message .= qq{From: Glist MailerDaemon <glist\@$hostname>\n};
+	$message .= qq{To: $RECIPIENTS\n};
+	$message .= qq{Subject: [$date] Status of pickup\n"};
+	$message .= qq{\n};	
+
+	# message body	
+	foreach my $file (sort keys %$hr_files) {
+		$message .= "$file\t";
+		if($hr_files->{$file} == 1) {
+			$message .= "sucess\n";
+		}
+		else {
+			$message .= "error\n";
+		}
+	}
+	
+	# message footer
+	$message .= "\n";
+	$message .= "-- \n";
+	$message .= "This message is generated. Please do not reply.\n";
+
+	# print the message to sendmail...
+	print SENDMAIL $message;
+
+	# ...and send it
+	close SENDMAIL 
+		or $g->error("pickupd_start_action: Couldn't send message: $!")
+		and return undef;
+
+	return 1;
+}

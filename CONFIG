@@ -1,0 +1,252 @@
+GLIST - CONFIGURATION
+==============================================================================
+
+GLOBAL CONFIGURATION
+
+	Global glist configuration is in the file PREFIX/etc/glist.config.
+
+	The global configuration is really just another list configuration
+	section with the name global.
+
+	Under this section you can modify or set the following variables:
+
+	* admin		- The administrators e-mail address of the glist server.
+	* hostname	- The hostname of the server glist is running on.
+	* daemon_args	- The argument list the daemons should start with. (for glistctl)
+	* request	- The address command requests are sent to/from
+	* fatal_handler	- Executes a handler if a fatal error has occured.
+			  see include/Fatal for examples.
+
+	example:
+
+	list global {
+		# Admin mail messages go to:
+		admin		root@foo.bar
+
+		# Hostname of this box:
+		hostname	foo.bar
+
+		# Start in daemon mode with verbose option set 
+		# and check for new files once a second.
+		daemon_args	-Dvt 1
+
+		# subscription/unsubscribe etc requests go here
+		request glist-request@foo.bar
+
+		# Send mail to another person if a fatal error occurs
+		fatal_handler Fatal::Sendmail
+	};
+
+OTHER GLOBAL CONFIGURATION DIRECTIVES
+
+	* alias		- Create an alias for a list.
+
+	Example:
+
+	list foo@bar {
+		.....
+	}
+	
+	alias foo@other.bar foo@bar
+
+	The alias statement can be anywhere, it will not be parsed before
+	everything else is read, so you don't have to define a list before
+	you make an alias for it.
+
+LIST CONFIGURATION
+
+	List configuration are built upon sections and brackets.
+
+	The common configuration syntax in etc/glist.config is kind of like this:
+	
+	list <list-name> {
+		list-option-1	value
+		list-option-2	value
+		list-option-n	value
+	}
+
+	1. Every list-option must have it's own line
+	2. List option and value is separated by one or more whitespaces.
+	3. Every list configuration entry must end with a newline
+
+	The following variables are availible to lists:
+
+	* owner		- The e-mail adress of the owner of this list.
+			  This address get's the error messages for this list.
+
+	* send_allow	- List of e-mail adresses separated by ',' that is allowed
+			  to send mail to this list. 
+			  If you add on_list to this option those on the list
+			  are allowed to send.	
+
+			  You can add domains as well. microsoft.com .com billg@microsoft.com
+			  and so on.
+
+			  If not specified everyone can send to the list.
+
+		  	  blacklist has higher priority than send_allow.
+
+	* push_list_id	- gloria push_list_id of this mailinglist. (if type is sql)
+
+	* database	- the postgresql database this list is on. (if type is sql)
+
+	* server	- the server postgresql is running on. (if type is sql)
+
+	* type		- sql or file.
+
+	* file		- file to get adresses from. (if type is file)
+			  Mail adresses are stored by one adress for each line.
+
+	* sender	- The adress to put in the From: header.
+			  If not specified it defaults to the original
+			  sender of the message.
+
+	* recipient	- The adress to put in the To: header.
+			  If not specified it defaults to the address
+			  of the list.
+
+	* reply_to	- Add an Reply-to: header
+
+	* subject_prefix - Prefix to be added to subjects.
+
+	* hide_sender	- Don't send the X-Original-Sender header.
+
+	* size_limit	- Maximum length of body (in chars). Default: 4000960
+
+	* blacklist	- List of senders that *definitely* is not allowed to
+			  send to this list. files can be specified with file::filename.
+
+	* header	- File containing text that should be included in the top of each message
+			  sent to the list.
+
+	* footer	- File containing text that should be included in the end of each message 
+			  sent to the list.
+
+	* hello_file	- File containing text that should be sent when subscribing
+
+	* info		- File with short description of the list.
+
+	* adm_by_mail	- Can users administrate their profiles by mail?
+			  (subscribe/unsubscribe etc)
+			  Arguments can be: yes or no
+
+	* sql_query	- Edit the query used for getting e-mail adresses.
+			  %s represents the push_list_id.
+	* require	- Get list configuration from a file. Die if it can't
+			  be found.
+	* include	- Get list configuration from a file. Just don't mind
+			  if it can't be found.
+	* moderators	- A list of e-mail addresses that will receive approval
+			  messages for this list, and can mark them as OK.
+			  Addresses are separated with commas (,)
+			  *NOT YET IMPLEMENTED*
+	* need_approval	- Which actions that needs approval from the one or more
+			  moderators, if no moderators are defined owner is used.
+			  Possible values for this key is:
+				subscriptions - needs approval on subscription requests
+				posts	- needs approval on postings to the list
+				rejected - rejected mails from header_checks, blacklist etc
+			 	all	- both (... and maybe more in the future)
+			  *NOT YET IMPLEMENTED* 
+	* header_checks - File with list of words that will reject the message
+			  if found in the header.
+	* body_checks	- File with list of words that will reject the message
+			  if found in the body.
+	* allow_subscribe - List of hosts | e-mail adresses that are allowed to subscribe by e-mail
+			  . file::filename for a file.
+	* allow_attachments	- Attachments not of type $content_checks will be removed if this is
+				set to no
+	* content_checks - List of content-types that are allowed. 
+	* content_deny	- List of content-types that are denied. 
+	
+
+EXAMPLE 1: GLORIA BASED ANNOUNCEMENT LIST
+
+	list glist-announce@glist.org {
+		owner		admin@glist.org
+		send_allow	ask@unixmonks.net, author2@unixmonks.net
+		type		sql
+		push_list_id	334
+		database	glist
+		server		pgsql.unixmonks.net
+		sender		glist-announce-sender@glist.org
+		subject_prefix  [GLIST]
+		hide_sender	yes
+		adm_by_mail	no
+	};
+
+EXAMPLE 2: FILE BASED ANNOUNCEMENT LIST
+
+	list glist-annonuce@glist.org {
+		owner		admin@glist.org
+		send_allow	ask@unixmonks.net, author2@unixmonks.net
+		type		file
+		file		/opt/glist/etc/glist-announce.list
+		sender		glist-announce-sender@glist.org
+		subject_prefix  [GLIST]
+		hide_sender	yes
+		adm_by_mail	no
+	};
+
+SENDMAIL/POSTFIX ALIAS CONFIGURATION
+
+	After configuring glist for the new mailinglist you have to 
+	configure your mailer daemon. For sendmail/postfix you can
+	do this by adding the lines:
+
+	# all mails that come to glist are bounces, pass these on
+	# to the deferred queue:
+	glist:			"|PREFIX/bin/gdefer"
+
+	# glist mail command
+	glist-request:		"|PREFIX/bin/gcmd"
+
+	# fetch all mail to glist-announce@glist.org:
+	glist-announce:		"|PREFIX/bin/gfetch glist-announce@glist.org"
+
+	# People should not be replying back to glist-announce-sender
+	# so these go to /dev/null:
+	glist-announce-sender:	"|>/dev/null"
+
+	# Discussion lists don't need any sender so just one entry needed
+	# for those:
+	glist-users:		"|PREFIX/bin/gfetch glist-users@glist.org"
+
+EXAMPLE 4: SQL BASED DISCUSSION LIST
+
+	list glist-users@glist.org {
+		owner		admin@glist.org
+		send_allow	on_list
+		type		sql
+		push_list_id	3000
+		database	glist
+		server		pgsql.unixmonks.net
+		adm_by_mail	no	
+	}
+
+EXAMPLE 5: FILE BASED DISCUSSION LIST
+
+	list glist-users@glist.org {
+		owner		admin@glist.org
+		send_allow	on_list
+		type		file
+		file		/opt/glist/etc/glist-users.list
+		adm_by_mail	yes
+	}
+
+DATABASE PASSWORDS
+
+	The passwords for the databases is in etc/glist.passwd
+	Here the values are separated by ':'.
+
+	The syntax in this file is:
+
+	database-server:database-name:username:password:dbtype
+
+	example:
+
+	pgsql.unixmonks.net:glist:user:secret:pgsql
+
+	Each password entry has it's own line ofcourse.
+
+==============================================================================

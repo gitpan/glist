@@ -1,0 +1,223 @@
+#!/bin/sh
+# ask@unixmonks.net
+
+. ./config.defs
+if [ -f "config.cache" ]; then
+	. ./config.cache
+fi
+
+
+me=`basename $0`;
+
+banner() {
+	echo "glist configure utility 2001041901"
+	echo "(c) Ask Solem Hoel <ask@unixmonks.net>"
+}
+
+banner
+
+argv=$*;
+
+if [ "$1" = "-d" ]
+then
+	DEBUG=1
+	argv=`echo $argv | sed 's%^-d\s*%%'`
+fi
+
+for arg in $argv
+do
+	case $arg in
+		--help)
+			cat <<EOF
+
+Configure options
+  --prefix                install prefix
+  --with-sendmail         path to sendmail
+  --with-sendmail-args    arguments to sendmail
+  --with-sql              include sql support for databases split by ,
+  --with-wrappers         install wrappers for the suid programs
+  --with-glist-user       Username of the glistuser
+  --with-glist-group      Groupname of the glist grup.
+  --with-perl             path to the perl interpreter
+  --with-perl-args        arguments to the perl interpreter
+
+EOF
+			exit 0
+		;;
+		--prefix=*)
+			prefix=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom prefix $prefix"
+		;;
+		--with-sendmail=*)
+			sendmail=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom sendmail $sendmail"
+		;;
+		--with-glist-user=*)
+			glist_user=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom glist user $glist_user"
+		;;
+		--with-glist-group=*)
+			glist_group=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom glist group $glist_group"
+		;;
+		--with-sendmail-args=*)
+			sendmail_arg=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom sendmail arguments $sendmail_arg"
+		;;
+		--with-sql=*)
+			use_sql=`echo $arg | cut -d= -f2`
+			for sql_type in `echo $use_sql | sed 's/,/ /g'`
+			do
+				case $sql_type in
+					no)
+						: void
+					;;
+					pgsql)
+						use_pgsql="yes"
+					;;
+					db2)
+						use_db2="yes"
+					;;
+					msql)
+						use_msql="yes"
+					;;
+					mysql)
+						use_mysql="yes"
+					;;
+					*)
+						echo "$me error: --with-sql: unknown sql type";
+						exit 1
+					;;
+				esac
+			done
+			[ $DEBUG ] && echo "$me: custom sql set to $use_sql"
+		;;
+		--with-wrappers=*)
+			use_wrappers=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom wrapper set to $use_wrappers"
+			if [ "$use_wrappers" = "yes" -o "$use_wrappers" = "no" ]
+			then
+				: void
+			else
+				echo "$me error: --with-wrappers argument must be yes or no."
+				exit 1
+			fi
+		;;
+		--with-perl=*)
+			perl=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && echo "$me: custom perl interpreter set to $perl"
+		;;
+		--with-perl-args=*)
+			perl_arg=`echo $arg | cut -d= -f2`
+			[ $DEBUG ] && "$me: custom perl arguments set to $perl_arg"
+		;;
+		*)
+			echo "$me: unknown option: $arg"
+		;;
+	esac
+done
+
+fperl="$perl $perl_arg"
+fsendmail="$sendmail $sendmail_arg"
+
+echo
+echo "Creating configuration for glist..."
+echo
+
+echo "Checking configuration..."
+echo -n "Sendmail in $sendmail... "
+if [ -x "$sendmail" ]
+then
+	echo "ok"
+else
+	echo "No such file!"
+	exit 1
+fi
+
+echo -n "Perl in $perl... "
+if [ -x "$perl" ]
+then
+	echo "ok"
+else
+	echo "No such file!"
+	exit 1
+fi
+
+echo
+
+echo -n "Getting user-id of the glist user... "
+rm -f getuid
+gcc helpers/getuid.c -o getuid
+if ./getuid $glist_user 2>/dev/null; then
+	glist_uid=`./getuid $glist_user`
+else
+	echo
+	echo "----------------------------------------"
+	echo "Couldn't find the user-id of the user $glist_user."
+	echo "Please create this user or select another"
+	echo "with the configure option --with-glist-user"
+	echo
+	rm -f ./getuid
+	exit
+fi
+rm -f ./getuid
+
+echo -n "Getting the goup-id of the glist group... "
+rm -f getgid
+gcc helpers/getgid.c -o getgid
+if ./getgid $glist_group 2>/dev/null; then
+	glist_gid=`./getgid $glist_group`
+else
+	echo
+	echo "----------------------------------------"
+	echo "Couldn't find the group-id of the user $glist_user."
+	echo "Please create this user or select another"
+	echo "with the configure option --with-glist-group"
+	echo
+fi
+rm -f getgid
+
+
+cp Makefile.tmpl Makefile
+echo "Creating Makefile..."
+perl -pi -e"s%@\@PREFIX\@@%${prefix}%g;" 		Makefile
+perl -pi -e"s%@\@SENDMAIL\@@%${fsendmail}%g;" 		Makefile
+perl -pi -e"s%@\@PERL\@@%${fperl}%g;" 			Makefile
+perl -pi -e"s%@\@USE_SQL\@@%${use_sql}%g;" 		Makefile
+perl -pi -e"s%@\@USE_PGSQL\@@%${use_pgsql}%g;"		Makefile
+perl -pi -e"s%@\@USE_DB2\@@%${use_db2}%g;"		Makefile
+perl -pi -e"s%@\@USE_MSQL\@@%${use_msql}%g;"		Makefile
+perl -pi -e"s%@\@USE_MYSQL\@@%${use_mysql}%g;"		Makefile
+perl -pi -e"s%@\@USE_WRAPPERS\@@%${use_wrappers}%g;" 	Makefile
+perl -pi -e"s%@\@GLIST_UID\@@%${glist_uid}%g;"		Makefile
+perl -pi -e"s%@\@GLIST_GID\@@%${glist_gid}%g;"		Makefile
+
+
+echo "Writing cache..."
+cat <<EOF > config.cache
+prefix=$prefix
+perl=$perl
+perl_arg=$perl_arg
+sendmail=$sendmail
+sendmail_arg=$sendmail_arg
+use_sql=$use_sql
+use_db2=$use_db2
+use_pgsql=$use_pgsql
+glist_user=$glist_user
+glist_group=$glist_group
+use_msql=$use_msql
+use_mysql=$use_mysql
+use_wrappers=$use_wrappers
+EOF
+
+echo "Configured with the following options:"
+echo "  glist prefix... $prefix";
+echo "  perl.... $fperl";
+echo "  sendmail... $fsendmail"
+echo "  use sql?... $use_sql"
+echo "  use wrappers?... $use_wrappers"
+echo "  glist user... $glist_user [$glist_uid]"
+echo "  glist group... $glist_group [$glist_gid]"
+echo 
+
+echo "Now type \`make' to proceed with the installation"

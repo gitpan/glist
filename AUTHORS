@@ -1,0 +1,6 @@
+Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net/
+
+Modules used outside the Perl distribution:
+
+Crypt::TripleDES: perldoc Crypt::TripleDES
+DBI: perldoc DBI

@@ -1,0 +1,303 @@
+#!/usr/bin/perl
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+* 	logd
+* PURPOSE
+*	Parse log messages sent to a unix domain socket
+*	and write it to the correct logfile.
+* AUTHORS
+*	Ask Solem Hoel <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+##############################
+# Configuration
+#
+# ### Full path to the mail spool dir
+
+  my $PREFIX = '@@PREFIX@@';
+
+##############################
+
+use strict;
+use lib '@@INCLUDE@@';
+use Glist;
+use Socket;
+use POSIX;
+use Fcntl qw(:flock);
+use IO::Handle;
+
+sub fsetpnam {eval{$0=shift}};
+
+fsetpnam("[glist/logd]");
+$| = 1;
+
+# Path to our lockfile
+my $LOCKFILE = $PREFIX . "/var/run/logd-lock";
+
+# Signal handlers. We should clean up our mess.
+$SIG{INT}       = \&cleanup_no_remove;
+$SIG{TERM}      = \&cleanup;
+$SIG{HUP}       = \&cleanup;
+
+# Become a daemon...
+my $pid = fork();
+exit if $pid;
+cleanup_no_remove("Couldn't fork: $!") unless defined($pid);
+POSIX::setsid() or cleanup_no_remove("Can't start a new session: $!");
+
+#... do the lock file dance.
+lockfile() || cleanup_no_remove();
+
+eval{setpriority(PRI_PROCESS, $pid, PRIORITY)};
+
+my $glist = Glist::new(
+	prefix	=>	$PREFIX,
+	name	=>	'logd',
+);
+
+my $logdir = $glist->logfile();
+
+my %logfiles = (
+	pickupd		=> $glist->logfile().'/pickupd',
+	bounced		=> $glist->logfile().'/bounced',
+	rewrited	=> $glist->logfile().'/rewrited',
+	sendd		=> $glist->logfile().'/sendd',
+	glist		=> $glist->logfile().'/glist',
+);
+
+foreach my $logfile (keys %logfiles) {
+	if(-f $logfiles{$logfile}) {
+		unless($glist->file_check($logfiles{$logfile}, FC_FILE, FC_WRITE, [FC_MBO])) {
+			die("Logfile $logfiles{$logfile} is not a file.\n");
+		};
+	};
+};
+
+socket(SERVER, PF_UNIX, SOCK_DGRAM, 0);
+unlink $glist->gl_socket();
+bind(SERVER, sockaddr_un($glist->gl_socket()))
+	or die("Can't create server: $!");
+
+my %valid_vars = (
+	name	=> 1,
+	pid	=> 1,
+	message	=> 1,
+);
+
+while(my $entry = <SERVER>) {
+	SERVER->autoflush(1);
+	$| = 1;
+	chomp($entry);
+	my @fields = split(/\s+/, $entry, 3);
+	my %entry;
+	foreach my $field (@fields) {
+		my ($key, $value) = split('=', $field);
+		next unless $valid_vars{$key};
+		next if(length($value) > 2048);
+		$entry{$key} = $value;
+	};
+
+	$entry{name} ||= 'glist';
+	$entry{message} =~ s/^\s*\(.+?\)\s+//;
+
+	my ($mon, $day, $time, $year) = (split(/\s+/, localtime))[1..4];
+	my $message = sprintf("%s %s %s %d %s[%d]: %s\n",
+		$mon,
+		$day,
+		$time,
+		$year,
+		$entry{name},
+		$entry{pid},
+		$entry{message},
+	);
+
+	if($entry{name} eq 'pickupd') {
+		open(PICKUPD,  "+>>$logfiles{pickupd}")  || die("Couldn't open $logfiles{pickupd}: $!\n");
+		flock(PICKUPD, LOCK_EX);
+		print(PICKUPD $message);
+		flock(PICKUPD, LOCK_UN);
+		close(PICKUPD);
+	}
+	elsif($entry{name} eq 'bounced') {
+		open(BOUNCED,  "+>>$logfiles{bounced}")  || die("Couldn't open $logfiles{bounced}: $!\n");
+		flock(BOUNCED, LOCK_EX);
+		print(BOUNCED $message);
+		flock(BOUNCED, LOCK_UN);
+		close(BOUNCED);
+	}
+	elsif($entry{name} eq 'rewrited') {
+		open(REWRITED, "+>>$logfiles{rewrited}") || die("Couldn't open $logfiles{rewrited}: $!\n");
+		flock(REWRITED, LOCK_EX);
+		print(REWRITED $message);
+		flock(REWRITED, LOCK_UN);
+		close(REWRITED);
+	}
+	elsif($entry{name} eq 'sendd') {
+		open(SENDD,    "+>>$logfiles{sendd}")    || die("Couldn't open $logfiles{sendd}: $!\n");
+		flock(SENDD, LOCK_EX);
+		print(SENDD $message);
+		flock(SENDD, LOCK_UN);
+		close(SENDD);
+	}
+	elsif($entry{name} eq 'glist') {
+		open(GLIST,    "+>>$logfiles{glist}")	 || die("Couldn't open $logfiles{glist}: $!\n");
+		flock(GLIST, LOCK_EX);
+		print(GLIST $message);
+		flock(GLIST, LOCK_UN);
+		close(GLIST);
+	};
+};
+
+sub cleanup {
+        my $msg = shift;
+        if($msg) {
+                print $msg, "\n";
+        }
+        if(-f $LOCKFILE) {
+                unlink($LOCKFILE);
+        };
+        exit;
+};
+
+sub cleanup_no_remove {
+        my $msg = shift;
+        if($msg) {
+                print $msg, "\n";
+        };
+        exit;
+};
+
+sub process_running {
+        my $pid = shift;
+        unless(-d "/proc/$pid") {
+                return undef;
+        }
+        else {
+                return 1;
+        };
+};
+
+sub lockfile {
+        if(-l $LOCKFILE) {
+                cleanup_no_remove("Oops. $LOCKFILE is a symbolic link. possible race attempt.");
+                return undef;
+        };
+
+        if(-f $LOCKFILE) {
+                open(LOCK, $LOCKFILE)
+                        || cleanup_no_remove("Couldn't open lockfile $LOCKFILE: $!");
+                my $lock_pid;
+                while(<LOCK>) {
+                        chomp;
+                        $lock_pid = $_ if (/\d+/);
+                };
+                unless($lock_pid) {
+                        cleanup_no_remove("Invalid lock file. Please check and remove by hand.");
+                };
+
+                if(process_running($lock_pid)) {
+                        cleanup_no_remove("We're already running under PID $lock_pid");
+                }
+                else {
+                        print STDERR ("Stale lockfile found (owned by PID $lock_pid). Removing\n");
+                        unlink($LOCKFILE);
+                };
+        };
+
+        open(LOCK, ">$LOCKFILE")
+                || cleanup_no_remove("Couldn't create lockfile $LOCKFILE: $!");
+        print LOCK $$, "\n";
+        close(LOCK);
+
+        return 1;
+};
+__END__
+
+=cut
+=head1 NAME
+
+logd - Handle glist logging 
+
+=head1 SYNOPSIS
+
+        /path/to/logd 
+
+=head1 COMMAND LINE SWITCHES AND OPTIONS
+
+	Logd has no options or switches.
+
+=head1 DESCRIPTION
+
+	Logd reads from a unix domains socket and writes it
+	out to the correct logfile depending on the line read.
+
+	Logd recognizes log messages in the following order:
+
+	"name=%s pid=%d message=%s\n"
+
+=head1 CONFIGURATION
+
+        Configuration is done in the script it self.
+        Thogh this is preferred to be changed in the Makefile,
+        this can be done in the script as well.
+
+        In the first lines of sendd you can configure the following variables:
+
+=over 4
+
+=item
+	PREFIX
+
+	The prefix path for glist.
+
+=back
+
+=head1  FILES
+
+=over 4
+
+=item	LOGFILES IN PREFIX/var/log/glist
+
+	Each daemon has it's own logfile.
+
+=item	PREFIX/var/run/logd.sock
+
+	This is the unix domain socket the daemons writes their
+	messages to.
+
+=back
+
+=head1 VERSION
+
+	This is version 1.00
+
+=head1 BUGS
+
+	None known as of this date :)
+
+=head1 AUTHOR
+
+        Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+
+=cut
+

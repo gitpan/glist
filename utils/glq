@@ -1,0 +1,329 @@
+#!/usr/bin/perl
+
+=comment
+/****
+* GLIST - LIST MANAGER
+* ============================================================
+* FILENAME
+*	glq
+* PURPOSE
+*	Console administration utility for the glist queue.
+* AUTHORS
+*	Ask Solem Hoel, <ask@unixmonks.net>
+* ============================================================
+* This file is a part of the glist mailinglist manager.
+* (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2
+* as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+=cut
+
+use strict;
+use lib '@@INCLUDE@@';
+use Glist;
+use Queue;
+use Term::ReadLine;
+use vars qw($me %wordcache $shellmode);
+
+my $PREFIX = '@@PREFIX@@';
+($me = $0) =~ s%.*/%%;
+my $command = shift @ARGV;
+my @list = @ARGV;
+
+my $commands = {
+	ls		=> "&ls",
+	rm		=> "&rm",
+	stop		=> "&stop",
+	cont		=> "&cont",
+	up		=> "&up",
+	down		=> "&down",
+	list		=> "&ls",
+	remove		=> "&rm",
+	"delete"	=> "&rm",
+	del		=> "&rm",
+	hold		=> "&stop",
+	"continue"	=> "&cont",
+	restart		=> "&cont",
+	raise		=> "&up",
+	lower		=> "&down",
+	"++"		=> "&up",
+	"--"		=> "&down",
+	"?"		=> "&help",
+	"help"		=> "&help",
+	"usage"		=> "&usage",
+	shell		=> "&shell",
+	"exit"		=> "&puke",
+	"quit"		=> "&puke",
+	"system"	=> "&puke",
+
+};
+
+my $glist = Glist::new(prefix=>$PREFIX,daemon=>1);
+my $q = new Queue ($glist);
+usage() unless $command;
+glq($command, @list);
+
+sub glq {
+	my($command, @list) = @_;
+	$command = get_command($command);
+	unless(scalar @list) {
+		if	($command eq '&ls') {
+			@list = qw(re.*);
+		}
+		elsif	($command eq '&help') {
+			help();
+			exit unless $shellmode;
+			}
+		elsif	($command eq '&usage') {
+			usage();
+		}
+		elsif	($command eq '&shell') {
+			shell();
+		}
+		elsif	($command eq '&puke') {
+			@list = qw(blahhhrg aeaeaelg blrlllrroerp);
+			puke(@list);
+		}
+	}
+	unless(scalar(@list)) {
+		unless($shellmode) {
+			usage();
+			return undef;
+		}
+		else {
+			print STDERR "Missing arguments to $command\n";
+			return undef;
+		}
+	};
+	my $objects = get_objects(\@list);
+	eval("$command(\$objects);");
+	throw("$@\n") if $@;
+}
+
+
+sub shell {
+	my $term = new Term::ReadLine 'Glist Queue Manager';
+	my $prompt = "glq> ";
+	while(1) {
+		$_ = $term->readline($prompt);
+		chomp;
+		next unless length;
+		next if /^\s*$/;
+		%wordcache = ();
+		$shellmode = 1;
+		my ($command, @list) = split /\s+/, $_;
+		glq($command, @list);
+		warn $@ if $@;
+		$term->addhistory($_) if /\S/;
+	}
+	return 1;
+}
+
+
+sub help {
+	printf STDERR <<"EOF"
+
+SYNOPSIS
+  $me command list-of-entries
+	
+COMMANDS
+  ls|list		list spool entries.
+  rm|remove|delete	delete spool entries.
+  stop|hold		put spool entries on hold.
+  continue|restart	continue entries that is on hold.
+  raise|++|up		raise the priority on given entries.
+  lower|--|down		lower the priority on given entries.
+  help|??		this screen.
+  usage			usage screen.
+
+REGEXPS
+  Regular expressions can be used in the list of entries
+  by prefixing a argument with 're'.
+
+EXAMPLES
+  ### List all objects
+  $me ls
+  $me list
+  $me list re.*
+  
+  ### Remove all objects with the name 199908
+  $me remove re199908
+
+  ### Raise the priority on all objects that contains 1 or 6
+  $me raise 're1|6'
+
+EOF
+;
+}
+
+sub usage {
+	printf STDERR "$me (glist %s)\n",
+		$glist->version->extended();
+	print  STDERR "Usage: \`$me [help|shell|*command] [list of objects]'\n";
+	exit unless $shellmode;
+}
+
+sub ls {
+	my $list = shift;
+	$q->gtr_nicelist($list);
+}
+
+sub rm {
+	my $list = shift;
+	foreach(@$list) {
+		$q->gtr_delete($_) or warn $glist->error(), "\n";
+	}
+}
+
+sub stop {
+	my $list = shift;
+	foreach(@$list) {
+		$q->gtr_stop($_) or warn $glist->error(), "\n";
+	}
+}
+
+sub cont {
+	my $list = shift;
+	foreach(@$list) {
+		$q->gtr_restart($_) or warn $glist->error(), "\n";
+	}
+}
+
+sub up {
+	my $list = shift;
+	foreach(@$list) {
+		$q->gtr_raise($_) or warn $glist->error(), "\n";
+	}
+}
+
+sub down {
+	my $list = shift;
+	foreach(@$list) {
+		$q->gtr_lower($_) or warn $glist->error(), "\n";
+	}
+}
+
+sub get_objects {
+	my $aref = shift;
+	my $iopenedq;
+	my @list;
+	unless($q->queue) {
+		$q->openqueue or throw($glist->error()), "\n";
+		$iopenedq++;
+	}
+	my $queue = $q->queue;
+	foreach my $regexp(sort @$aref) {
+		if((substr $regexp, 0, 2) eq 're') {
+			$regexp = substr $regexp, 2, length $regexp;
+			push(@list, grep(/$regexp/, keys %$queue));
+		}
+		else {
+			if($queue->{$regexp}) {
+				push(@list, $regexp);
+			};
+		}
+	}
+	$q->closequeue if $iopenedq;
+	return \@list;
+};
+
+sub find_replacement_regexp {
+	my($command, $href) = @_;
+	my $command = quotemeta $command;
+	my %sizes;
+	my @lookslike = grep /^$command/, keys %$href;
+	foreach(@lookslike) {
+		$sizes{$_} = length $_;
+	}
+	foreach(sort {$a <=> $b} keys %sizes) {
+		return $_;
+	}
+	return undef;
+}
+
+sub find_replacement_fuzzy {
+	my($command, $href) = @_;
+	my @chars = split //, $command;
+	my %possible;
+	foreach my $chr (sort @chars) {
+		foreach my $word (sort keys %$href) {
+			if(index($word, $chr) >= 0) {
+				$possible{$word}++;
+			}
+		}
+	}
+	sub bylookeq {
+		$possible{$a} <=> $possible{$b}
+	}
+	my @res = sort bylookeq keys %possible;
+	return $res[$#res];
+}
+
+sub ask {
+	my $word = shift;
+	return undef unless $word;
+	return undef if $wordcache{$word};
+	$wordcache{$word}++;
+	system('tput smul 2>/dev/null');
+	print("\aWhat is that? Don't you mean $word? (y/n)");
+	system('stty  raw -echo 1>/dev/null 2>&1');
+	my $yes = 0;
+	while(1) {
+		my $key = getc(STDIN);
+		if	($key eq 'y') {
+			$yes = 1;
+			last;
+		}
+		elsif	($key eq 'n') {
+			last;
+		}
+	}
+	system('stty -raw  echo 1>/dev/null 2>&1');
+	system('tput rmul 2>/dev/null');
+	print "\n";
+	return $yes;
+}
+
+
+sub get_command {
+	my $command = shift;
+	if($commands->{$command}) {
+		return $commands->{$command};
+	}
+	my $replacement = find_replacement_regexp($command, $commands);
+	unless(ask($replacement)) {
+		$replacement = find_replacement_fuzzy($command, $commands);
+		unless(ask($replacement)) {
+					throw("I don't know how to $command.\n");
+				}
+		else {
+			$command = $commands->{$replacement};
+		}
+	}
+	else {
+		$command = $commands->{$replacement};
+	}
+	return $command if $command;
+}
+
+sub throw {
+	my $msg = shift;
+	print $msg if $msg;
+	exit unless $shellmode;
+}
+sub puke {
+	my $msg = shift;
+	print $msg if $msg;
+	exit;
+}

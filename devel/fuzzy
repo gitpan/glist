@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+
+use strict;
+
+my $baseword = "sl";
+
+my @wordsizes= qw(4:list 2:ls 1:shutdown 1:stop);
+@wordsizes = sort {length $baseword <=> $b} @wordsizes;
+print join(", ", @wordsizes), "\n";
+ 

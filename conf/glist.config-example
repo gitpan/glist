@@ -1,0 +1,132 @@
+###################################################################
+#  GLIST CONFIGURATION EXAMPLE (v.0.7)                            #
+//--- - --- - --- - - -- -- --- ----- -<###########################
+
+# ####### GLOBAL CONFIGURATION                       ############ #
+list global {
+	# the e-mail to send global administrative messages to.
+	admin		root@@@HOSTNAME@@
+	# the hostname of the box we're running on.
+	hostname	@@HOSTNAME@@
+	# arguments to start the daemons with
+	daemon_args	-Dv
+	# the e-mail address to the gcmd alias.
+	request		glist-request@@@HOSTNAME@@
+}
+
+# ####### SAMPLE LIST                                ############ #
+# The name and definition of the mailinglist.
+# The argument for list is the main address for this list.
+
+list test@@@HOSTNAME@@ {
+	# The address for the owner of this list.
+	# This address receives all the bounces and error messages
+	# that is delivered to this list.
+	owner	adm@@@HOSTNAME@@
+
+	# Who is allowed to send to this list?
+	# if the argument is on_list, only those who actually
+	# are in the list are allowed to send.
+	send_allow	on_list
+	// send_allow	@@@HOSTNAME@@
+
+	# The type of this list: file or sql.
+	type file
+	file @@PREFIX@@/etc/test.list
+
+	// type sql
+	// server @@HOSTNAME@@
+	// database testlist
+	// push_list_id 30
+
+	# The adress to put in the From: header.
+	# If not specified it defaults to the original
+	# sender of the message.
+	# This can be good for announcement mailinglists
+	# that don't want to show the real sender.
+	// sender test@@@HOSTNAME@@
+
+	# The adress to put in the To: header.
+	# If not specified it defaults to the address
+	# of the list.	
+	# This can be nice for announcement mailinglists
+	# that don't want to show the adress of the mailinglist.
+	// recipient test-null@@@HOSTNAME@@
+
+	# Add an reply-to header
+	// reply_to	test@@@HOSTNAME@@	
+
+	# Prefix to be added to subjects
+	# Will not be added if the subject starts with Re: or Fw:
+	// subject_prefix	[Test]
+
+	# Don't send the X-Original-Sender header.
+	// hide_sender	yes
+
+	# Maximum length of body (in chars). Default: 4000960
+	// size_limit	1024
+
+	# List of senders that *definitely* is not allowed to
+	# send to this list. files can be specified with file::filename.
+	// blacklist	microsoft.com, file::@@PREFIX@@/etc/spamlist
+
+	# File containing text that should be included in the top of each message
+	# sent to the list.
+	// header @@PREFIX@@/etc/test.header
+
+	# File containing text that should be included in the end of each message
+	# sent to the list.
+	// footer @@PREFIX@@/etc/test.footer
+
+	# File containing text that should be sent when subscribing
+	// hello_file @@PREFIX@@/etc/test.hello
+
+	# File with short description of the list.
+	# Users can get this info with the command "info <list>"
+	// info @@PREFIX@@/etc/test.info	
+
+	# Can users administrate their profiles by mail?
+	# (subscribe/unsubscribe etc)
+	// adm_by_mail  yes
+
+	# File with list of words that will reject the message
+	# if found in the header.
+	// header_checks @@PREFIX@@/etc/spamlist.header
+
+	# File with list of words that will reject the message
+	# if found in the body.
+	// body_checks @@PREFIX@@/etc/spamlist.body
+
+	# List of hosts | e-mail adresses that are allowed to subscribe
+	# by e-mail.
+	// allow_subscribe @@HOSTNAME@@, file::@@PREFIX@@/etc/subscribe.allow
+
+	# Attachments not of type $content_checks will be removed if this is
+	# set to no
+	allow_attachments no
+
+	# List of content-types that are allowed. 
+	content_checks text/plain, message/rfc822, multipart/mixed
+
+	# List of content-types that are not allowed.
+	// content_deny text/html, application/
+
+	# Sends a summary to one or more adresses separated by comma
+	# send_summary_to can be several of the following (separated by comma)
+	#   o error - 	send summary of addresses the mail was sent to if an error occurs
+	#		in the middle of a sending.
+	#   o success - send summary of addresses the mail was sent to on success.
+	#   o all -	all of the above
+	// send_summary_on	error, success
+	// send_summary_to	ask@gan.no
+}
+
+# You can require and include files in the configuration as well.
+# excellent for letting other (l)users manage their own mailinglists.
+// list userlist@@@HOSTNAME@@ {
+//	// require /home/users/luser/.list
+//	include /home/users/luser/.list
+// }
+
+# and make aliases for virtual hosts.
+// alias userlist@virtualhost.foo userlist@@@HOSTNAME@@

@@ -1,0 +1,91 @@
+GLIST - INSTALLATION AND CONFIGURATION
+==============================================================================
+
+REQUIREMENTS FOR FILE BASED LISTS
+	- Perl 5 
+	- Crypt::TripleDES
+
+REQUIREMENTS FOR SQL BASED LISTS
+	- Perl 5 
+	- Crypt::TripleDES
+	- DBI.pm
+	- Database driver for the rdbms.
+
+SUPPORTED SYSTEMS
+
+	Glist has been successfully tested on:
+
+	* Slackware Linux 8.0, perl-5.6.1, postfix, kernel 2.4.x
+	* Slackware Linux 7.1, perl-5.6.1, postfix, kernel 2.4.x
+	* Slackware Linux 7.1, perl-5.6.0, postfix, kernel 2.2.x
+	* Slackware Linux 7.1, perl-5.6.0, postfix, kernel 2.2.x
+	* Slackware Linux 3.6, perl-5.0053, postfix, kernel 2.2.x+openwall patch (with wrapper solution)
+	* RedHat Linux 6.2, perl-5.6.0, sendmail, kernel 2.2.x+openwall patch
+	* RedHat Linux 5.2, perl-5.6.0, sendmail, kernel 2.2.x
+	* RedHat Linux 5.2, perl-5.6.0, qmail, kernel 2.2.x
+
+INSTALLING PERL MODULES
+
+	Perl modules can easily be installed with the CPAN module.
+	The first time you use CPAN.pm, you have to configure it - but this is
+	basicly just pressing enter a dozen times and you're ready to go. :)
+
+	To install some modules:
+
+	perl -MCPAN -e 'install Crypt::TripleDES';
+	perl -MCPAN -e 'install DBI';
+	perl -MCPAN -e 'install DBD::Pg';
+
+	For more info: perldoc CPAN
+
+CREATING THE GLIST USER
+
+	You must create the user glist should run as and it's home directory.
+	The standard home directory path for this is /opt/glist, but you
+	can choose whatever you want. (just remember specifying the --prefix option to configure)
+
+	For the glist daemons to read the incoming mailfiles from the mail transfer agent
+	it has to be in the same group as the mailsystem. This groupname is usually
+	mail or daemon.
+
+	Create the user and group by executing these commands as root:
+
+	% groupadd glist
+	% useradd glist -g glist -G daemon -m -d /opt/glist -s /bin/bash
+
+INSTALLING THE SOFTWARE
+
+	Now you can change your identity to the glist user:
+	% su - glist
+
+	Configure the Makefile by using the configure script:
+	% sh configure
+
+	If you want to change any options here, execute configure with the --help argument
+	% sh configure --help
+
+	Then just execute:
+	% make install
+
+CONFIGURING GLIST
+
+	Explanations of the configuration files are in the file CONFIG
+
+	% vi /opt/glist/etc/glist.config
+	% vi /opt/glist/etc/glist.passwd
+
+RUNNING GLIST
+
+	To run the daemons just execute:
+	% /opt/glist/bin/glistctl start
+
+	and all daemons will hopefully start.
+
+	This program should be run from crontab each minute,
+	to be sure all the daemons are alive.
+
+	Example:
+	
+	* * * * * /opt/glist/bin/glistctl check 1>/dev/null 2>&1
+	
+==============================================================================

@@ -1,0 +1,256 @@
+-- 2001-12-05	glist-0.9.16	ask	ask@unixmonks.net
+	* new utility: cleanq, remove stale queue files
+	* new configuration key: send_summary_to
+	* new configuration key: send_summary_on	
+	* Send.pm: possible to get summary in mail after send
+
+-- 2001-12-01	glist-0.9.16	ask	ask@unixmonks.net
+	* removed set-uid from gfetch and gdefer
+	* new Version.pm
+
+-- 2001-10-24	glist-0.9.16	ask	ask@unixmonks.net
+	* some code cleanup and code optimization
+	* specs/QUEUE_TRACKING implemented.
+	* fixed locking for the Berkely DB handling.
+	* new utility: glq
+
+-- 2001-10-17	glist-0.9.16	ask	ask@unixmonks.net
+	* added rewrite_handler in Rewrite.pm
+	* added skeleton for *_handler configuration directives.
+
+-- 2001-10-08	glist-0.9.16	ask	ask@unixmonks.net
+	* glist-0.9.16 released
+
+-- 2001-10-08	glist-0.9.15	ask	ask@unixmonks.net
+	* fixed and tested the db2 support.
+	* glist-0.9.15 released
+	* well... some lame bugs with the Makefile
+
+-- 2001-10-08	glist-0.9.14	ask	ask@unixmonks.net
+	* glist-0.9.14 released
+
+-- 2001-10-07	glist-0.9.14	ask	ask@unixmonks.net
+	* support for mSQL
+	* support for mysql
+	* fixed RDBMS support.	
+
+-- 2001-10-06	glist-1.0rc12	ask	ask@unixmonks.net
+	* new versioning system, we are now at version 0.9.14
+	* support for RFC2822 finished :) *cheers*
+	* finished implementation of new mail parsing routine, 
+	  tested and verified
+	* removed some lame logging
+	* encryption of the RDBMS password database
+	* new utility: gdbadmin	
+
+-- 2001-10-04	glist-1.0rc12	ask	ask@unixmonks.net
+	* fixed a race condition in glistctl
+
+-- 2001-10-03	glist-1.0rc12	ask	ask@unixmonks.net
+	* documentation fixup
+	* fixed a bug with the subscription process that rejected
+	  the user anyway if subscribe_allow was not defined.
+
+-- 2001-07-31	glist-1.0.rc12	ask	ask@unixmonks.net
+	* glist-1.0rc13: For DB2 support to be tested
+	* some code cleanup
+	* added $Glist::VERSIONINFO
+
+-- 2001-0-12	glist-1.0rc12	ask	ask@unixmonks.net
+	* Support for multiple databases.
+	* DB2 support
+
+-- 2001-07-09	glist-1.0rc11	ask	ask@unixmonks.net
+	* glist-1.0rc12
+	* fixed serious bug with attachments.
+
+-- 2001-06-06	glist-1.0rc10	ask	ask@unixmonks.net
+	* glist-1.0rc11
+	* serious bug with Content-Type fixed. Did not catch content-type if the
+	header had several options.
+
+-- 2001-05-28	glist-1.0rc10	ask	ask@unixmonks.net
+	* minor changes in configure
+
+-- 2001-05-23	glist-1.0rc9	ask	ask@unixmonks.net
+	* glist-1.0rc10
+	* Reply-to changed to Reply-To in Glist/Rewrite.pm
+	* Remove Reply-To and Message-Id headers if hide_sender is yes, because
+	  microsoft ships these as default. (Glist/Rewrite.pm)
+
+-- 2001-05-14	glist-1.0rc8	ask	ask@unixmonks.net
+	* glist-1.0rc9
+	* gcmd: passwords are now atomaticly generated if none specified.
+	* error() changed to fatal() where reasonable.
+	* new global configuration key: fatal_handler
+	* Glist.pm: new function exec_handler, executes a handler.
+	* Glist.pm: new function fatal(), handles a fatal error, and runs it's handler
+	  if global configuration key fatal_handler exists.
+	
+-- 2001-05-11	glist-1.0rc7	ask	ask@unixmonks.net
+	* glist-1.0rc8
+	* new gmcd commands: enable and disable
+	* some minor fixed and documentation updates
+
+-- 2001-05-10	glist-1.0rc7	ask	ask@unixmonks.net
+	* Will now also drop messages with illegal content-type outside attachments.
+	* New configuration key: content_deny
+	* Now prints info when attachments is deleted in an attachment in the message.
+	* fixed a bug where subscribe_allow actually became subscribe_deny :)
+	* gcmd now also takes list as an argument. (in addition to GL_LIST environment variable);
+	  the argument has higher precedence than GL_LIST environment variable.
+	* gfetch now takes list as argument and passes that on to Rewrite.pm
+	* minor documentation changes
+	* gcmd, gfetch and gdefer now uses while(<STDIN>) instead of while(<>);
+	* Headers with incorrect case is now corrected with the correct
+	  case in Rewrite.pm. This means you can write from: instead of From:
+	  in the headers. Could catch some spam, but less confusion and
+	  it won't break broken clients.
+
+-- 2001-04-24	glist-1.0rc7	ask	ask@unixmonks.net
+	* configure now has a --with-wrappers options.
+	* Makefile now installs the wrappers if USE_WRAPPERS is set to yes.
+	* fixed a bug with . in configure that caused configure not to work
+	  with pdksh.
+
+-- 2001-04-19	glist-1.0rc7	ask	ask@unixmonks.net
+	* instead of a work around, the content-type bug is now really fixed.
+
+-- 2001-04-19	glist-1.0rc6	ask	ask@unixmonks.net
+	* glist-1.0rc7
+	* changed a bug where mails without Content-Type header would be messed up.
+	* default sendmail path changed back to /usr/sbin/sendmail
+	* sheebang.pl now removes whitespace from the perl interpreter variable.
+	* fixed a bug in glistctl where it couldn't run itself recursively
+          when run as ./glistctl
+-- 2001-04-19	glist-1.0rc5	ask	ask@unixmonks.net
+	* glist-1.0rc6 finished
+	* new self-made configure script *wow* :)
+	* file_check now removed from Send.pm
+	* file_check now removed from Bounce.pm
+
+-- 2001-04-18	glist-1.0rc5	ask	ask@unixmonks.net
+	* sql_query now tested, bugfixed and works ok
+	* fsetpnam(). Function for setting $0 =)
+
+-- 2001-04-10	glist-1.0rc5	ask	ask@unixmonks.net
+	* gcmd, gfetch and gdefer cannot be run from console anymore.
+	* detailed help in glistctl
+	* glistctl now has a option for checking if a daemon is running.
+	  so now glistctl start will complain if it couldn't start a daemon. 
+	* glistctl now has reload option, which is the same as old restart.
+	  just a $0 stop; $0 start
+	* ok_content_type() in Glist.pm. For a nicer list of which
+	  content types are accepted by default.
+	* made glist config vim syntax file in div/vim-syn :)
+	* audit and code cleanup of Glist/Send.pm
+	* audit and code cleanup of Glist/Admin.pm
+	* audit and code cleanup of Glist/Rewrite.pm
+	* audit and code cleanup of Glist/Bounce.pm
+	* audit and code cleanup of Glist.pm
+
+-- 2001-04-10	glist-1.0rc5	ask	ask@unixmonks.net
+	* strict checking if the log daemon runs for each daemon.
+	  nothing should run without the ability to log :)
+
+-- 2001-04-09	glist-1.0rc5	ask	ask@unixmonks.net
+	* div/changelog2html/cl.pl - a html formatter of the changelog. how useful ;) *bored*
+	* tested and approved on perl-5.6.1 (weeehaaaaaaa. don't we love perl updates? :)
+
+-- 2001-04-09	glist-1.0rc4	ask	ask@unixmonks.net
+	* improved the wrappers
+	* documentation improvements
+	* glist-1.0rc5 finished.
+
+-- 2001-04-08	glist-1.0rc4	ask	ask@unixmonks.net
+	* made wrapper solutions for slackware systems not supporting suidperl.
+	  this is in div/wrapper-solution/*. 
+	* gchk does not die if there is an error in an *included* file anymore.
+
+-- 2001-04-07	glist-1.0rc4	ask	ask@unixmonks.net
+	* logging functions now uses autoflush so logging will be in synch again :)
+	* all daemons now tries to set it's own priority to Glist::PRIORITY
+	* glistctl's restart function now just reloads the configuration if everything is running.
+	* all daemons (but logd) will now re-read configuration if SIGHUP is received
+	* bounced now flushes it's internal temporary variables.
+	* all daemons now report a nicer name and current state as program name (shown in ps)
+	* message/rfc822 added to the default list of allowed attachments
+	* better configuration example
+	* // style comments now allowed in configuration
+
+-- 2001-04-06	glist-1.0rc3	ask	ask@unixmonks.net
+	* glist-1.0rc4 finished 
+	* FEATURE FREEZE
+
+-- 2001-04-06	glist-1.0rc3	ask	ask@unixmonks.net
+	* new configuration key: $content_checks
+	* new configuration key: $header_checks
+	* new configuration key: $body_checks
+	* new configuration key: $allow_subscribe
+	* bugs squished :)
+
+-- 2001-04-03	glist-1.0rc3	ask	ask@unixmonks.net
+	* Sessions must be stored with mailinglists, ofcourse. If not the session id's won't
+	  match if a user sends two or more subscription requests to the same server. :)
+	* Fixed some warnings
+
+-- 2001-03-30	glist-1.0rc3	ask	ask@unixmonks.net
+	* All variables that are used in regexps are now quotemeta()'ed first :)
+	* fixed a bug with $subject_prefix where $subject_prefix was evaluated
+	  as an regular expression *DOH*
+	* fixed a bug in check_attachments() where files without attachments
+	  would be empty :) Now check_attachment() does nothing if there
+	  are no attachments.
+	* fixed a bug in logd where it couldn't create it's logfiles
+	  if they did not exist.
+	* changed bug in sendd, where prefix was hardcoded
+	* make install now installs the suid programs mode 4555
+	* new gchk check: $need_approval
+	* new configuration key: $need_approval
+	* new accessor in Glist.pm: need_approve_sub()
+	* new accessor in Glist.pm: need_approve_posts()
+	* new accessor in Glist.pm: approveq()
+	* new method in Glist.pm: move_to_approveq()
+	* new mail queue: approveq
+	* implementation of approval started.
+
+-- 2001-03-29	glist-1.0rc2	ask	ask@unixmonks.net
+	* glist-1.0rc3 finished.
+
+-- 2001-03-29	glist-1.0rc2	ask	ask@unixmonks.net
+	* Rewrite.pm now deletes unwanted attachments.
+	* new configuration key: $allow_attachments
+	* new configuration key: $attachment_size_limit
+	* check_attachments() introduced in Glist.pm
+	* fixed file_check() written as file_checK() in Admin.pm's info()
+	* List aliases now possible in configuration
+	* implemented file locking (flock()) in logd, Action.pm,
+	  Bounce.pm, Rewrite.pm and Send.pm
+	* Changed a bug in Admin.pm, where set_password() would bail out
+	  if user.db did not exist.
+
+-- 2001-03-28	glist-1.0rc1	ask	ask@unixmonks.net
+	* glist-1.0rc2 finished.
+
+-- 2001-03-28	glist-1.0rc1	ask	ask@unixmonks.net
+	* new configuration key: $include 
+	* new configuration key: $require
+	* Can now require and include files in the configuration file.
+          sweet for sysadmins who want to let users administrate their own
+	  lists.
+	* can now configure sql query for fetching list adresses
+	* better and more logging messages in Glist.pm and Admin.pm
+	* file_check() now logs filename
+	* file_check() implemented in Rewrite.pm
+	* file_check() implemented in Send.pm
+	* file_check() implemented in Bounce.pm
+	* file_check() implemented in Admin.pm
+	* file_check() implemented in Glist.pm
+	* file_check() implemented in daemons/logd
+	* Glist.pm: file_check() introduced. Some new constants for file checking.
+
+-- 2001-03-27	glist-1.0rc1	ask	ask@unixmonks.net
+	* E-mail sending to SQL list now works fine.
+	* Fixed formatting of Glist::VERSION several places to %.2f
+	* Fixed lowercase writing of S in X-DB_Server (was X-DB_server)
+	  in Rewrite.pm

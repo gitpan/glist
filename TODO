@@ -1,0 +1,52 @@
+-- For 0.9.17 (unknown)
+% priority (change the sort algo should be enough?)
+% tracking where a message is in the queues.
+% command line utility to handle the queues.
+% strict filenames in queue (only INT)
+% make sure only files that are introduced to the queue is touched.
+% pass glist object to handlers.
+% cronutility that removes stale queue files.
+% there is a race condition in the queue system if the daemons check
+  the queue too fast, we need locking on the directories or queuedb
+  and sleep until the lockholder is finished?
+* pickup handler, rewrite handler, send handler, bounce handler.
+
+	%pickup_start_action : global
+	%pickup_handler : global
+	%pickup_end_action : global
+
+	rewrite_start_action : global
+	rewrite_handler : list, global
+	rewrite_end_action : global
+
+	send_start_action : global
+	send_handler: list, global
+	send_end_action: global
+
+	bounce_start_action : global
+	bounce_handler: list, global
+	bounce_end_action: global
+
+	log_start_action : global
+	log_handler: list, global
+	log_end_action : global
+
+-- For 0.9.18 (unknown)
+* pod documentation for the utils/
+* glist users guide (LaTeX)
+
+
+-- For v1.2.x (unknown) (by priority)
+
+* automatic removal of adresses that does not work n times.
+* approve system (approved)
+* administration of lists through email and web.
+* full sql support
+* archiving (GAH - Glist archive handler)
+* syslog support
+* XML support
+
+Maybe:
+
+* nntp gatewaying?
+* xml configuration?

@@ -1,0 +1,156 @@
+=cut
+
+=head1 NAME 
+
+	GAH - Glist Archive Handler
+
+=head1 WHAT SHOULD GAH BE?
+
+=over 4
+
+=item	Archiving functionality for glist
+
+	Gah should store glist mails in a archive for each list,
+	through it's own command line utility and internal
+	API. Any program should be able to use gah though,
+	it should not just be restricted to glist.
+
+=item	It should be able to save files to the archive
+
+=item	It should be able to fetch files from the archive
+
+=item	It should be able to expire messages in the archive
+
+=item	It should be able to store non-text attachments
+	to it's own space, so the attachements in the mails
+	are replaced with an URL or path location to the files.
+
+=back
+
+=head1 WHAT SHOULD GAH *NOT* BE?
+
+=over 4
+
+=item	Web interface for the archive
+
+	Though new programs can use the interface to create
+	a web interface.
+
+=item	...another os ;)
+
+=back
+
+=head1 SYNOPSIS
+
+	use Gah;
+	my $gah = new Gah;
+	$gah->select_list('glist-list@glist.org);
+	$gah->store($file);
+	my $mid = $gah->mid;
+	my $gah_header = $gah->genheader;
+	my $message = $gah->fetch($mid);
+	$gah->flush_list;
+
+=head1 DESCRIPTION
+
+=over 4
+
+=item	CONSTRUCTORS
+
+=over 8
+
+=item	new
+
+	Create a new gah object.
+
+=back
+
+=item	ACCESSORS
+
+=over 8
+
+=item	list
+
+	The current/last mailinglist we are/were working with.
+
+	Name: Gah::{LIST}
+
+=item	mid
+
+	The current/last message id we are/were working with.
+
+	Name: Gah::{MID}
+
+=back
+
+=item	METHODS
+
+=over 8
+
+=item	select_list
+
+	Select the current list we should start working on.
+	Changes Gah::{LIST}
+
+=item	select_mid
+
+	Select the current message id we should start working on.
+	Changes Gah::{MID}
+
+=item	get_next_mid
+
+	Get the next message id availible
+
+=item	store
+
+	Store a message in the current mailing list archive.
+
+=item	fetch
+
+	Fetch a message in the current mailing list archive.
+
+=item	destroy
+
+	Kill a message in the current mailing list archive.
+
+=item	genheader
+
+	The genheader function is for generating the List-Archive header.
+
+	genheader should return something like:
+	http://www.glist.org/gah/glist-list@glist.org/20010419000001
+
+	if there is a url for this list, else it will return something like:
+	glist-list@glist.org/20010419000001
+
+=back
+
+=back
+
+=head1 FILES
+
+=over 4
+
+=item	PREFIX/etc/glist.config
+
+	The glist configuration file.
+
+=item	PREFIX/var/gah/archive/
+
+	The archive directory for storing messages.
+
+=item	PREFIX/var/gah/data/<listname>.dat
+
+	Index of the archive for fast searching.
+
+=item	PREFIX/var/gah/data/mid.dat
+
+	Index of the message id's
+
+=back
+
+=head1 DOCUMENT AUTHORS
+
+	Ask Solem Hoel <ask@unixmonks.net>
+
+=cut

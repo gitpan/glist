@@ -1,0 +1,31 @@
+Q: Do i have to restart glist when i change my configuration?
+A: Yes. Configuration is only read once.
+   You can send daemons the HUP signal to make them restart,
+   this is what `glistctl restart` does.
+
+Q: I keep getting the message:
+	fatal: execvp /usr/glist/bin/gfetch: Permission denied
+   or:
+	(Command died with status 1: "/usr/glist/bin/gfetch")
+   from my mailer-daemon when i send mail to a list.
+A: Does the mailer-daemon have permissions to execute programs
+   in PREFIX/opt, or PREFIX?
+   Possible solution:
+   chmod 711 PREFIX PREFIX/bin
+
+Q: HELP! Suidperl is not working.
+A: See div/wrapper-solution/README and configure with --with-wrappers
+
+Q: I use the DB2 support and get the following error
+   in my logfiles:
+   "Total Environment allocation failure!  
+   Did you set up your DB2 client environment?"
+A: You must add the following to the glist users ~/.profile:
+
+   . /opt/db2inst1/sqllib/db2profile
+
+   Where /opt/db2inst1 is the homedirectory of the db2 installation
+   user.
+
+   Then do a relogin and a `glistctl reload' for the sendd daemon to reload
+   it's environment.

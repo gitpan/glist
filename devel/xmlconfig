@@ -1,0 +1,10 @@
+<? xml version="1.0" ?>
+<glistconfig type="xml">
+	<list name="glist-announce@thirst.gan.no">
+		<owner>ask@gan.no</owner>
+		<content_deny>text/xml</content_deny>
+		<content_deny>text/html</content_deny>
+		<require>/opt/glist/etc/lists/drift/config</require>
+	</list>
+	<alias name="drift@gan.no" destination="drift@thirst.gan.no"/>
+</glistconfig>

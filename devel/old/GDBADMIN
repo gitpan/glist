@@ -1,0 +1,206 @@
+#!/usr/bin/perl
+
+use strict;
+use lib '/opt/glist/src/glist-1.0-devel/include';
+use Glist;
+use Glist::Admin;
+use Fcntl qw(:flock);
+use Term::ReadKey;
+
+my $PREFIX = '/opt/glist';
+my $TRIES = 3;
+
+CASE: {
+
+	goto NEW if ($ARGV[0] eq '-n');
+	#goto MOD if ($ARGV[0] eq '-m');
+	goto REM if ($ARGV[0] eq '-r');
+	goto HLP if ($ARGV[0] eq '-h');
+	goto USE;
+
+	NEW: {
+		my($dbserv, $dbname, $dbuser, $dbpass, $dbconf);
+		printf("Enter database server: ");
+		chomp($dbserv = <STDIN>);
+
+		printf("Enter database name: ");
+		chomp($dbname = <STDIN>);
+
+		printf("Enter database username: ");
+		chomp($dbuser = <STDIN>);
+
+
+		CHECKPASS:
+		for(my $count = 0; $count < $TRIES; $count++) {
+			ReadMode 2;
+			printf("Enter database password: ");
+			chomp($dbpass = <STDIN>);
+			printf("\n");
+			ReadMode 0;
+
+			ReadMode 2;
+			printf("Confirm database password: ");
+			chomp($dbconf = <STDIN>);
+			printf("\n");
+			ReadMode 0;
+
+			if($dbpass eq $dbconf) {
+				last CHECKPASS;
+			}
+			else {
+				printf STDERR ("Passwords doesn't match, please try again.\n");
+			};
+		};
+
+		db_adduser($dbserv, $dbname, $dbuser, $dbpass);
+
+		last CASE;
+	}
+
+	MOD: {
+		my($exserv, $exuser, $expass, $nwpass, $copass);
+		printf("Enter existing server: ");
+		chomp($exserv = <STDIN>);
+
+		printf("Enter existing username: ");
+		chomp($exuser = <STDIN>);
+		
+		unless(db_getuser($exserv, $exuser)) {
+			die("User $exuser doesn't exist.\n");
+		};
+
+		EXPASS:
+		for(my $count = 0; $count < $TRIES; $count++) {
+			ReadMode 2;
+			printf("Enter existing password: ");
+			chomp($expass = <STDIN>);
+			print "\n";
+			ReadMode 0;
+			if(db_check_pass($exserv, $exuser, $expass)) {
+				last EXPASS;
+			}
+			else {
+				print("Password is not correct. Please try again\n");
+			};
+		};
+	
+		GETPASS:	
+		for(my $count = 0; $count < $TRIES; $count++) {
+			ReadMode 2;
+			printf("Enter password: ");
+			chomp($nwpass = <STDIN>);
+			print "\n";
+			ReadMode 0;
+
+			ReadMode 2;
+			printf("Confirm password: ");
+			chomp($copass = <STDIN>);
+			print "\n";
+			ReadMode 0;
+
+			if($nwpass eq $copass) {
+				db_passwd($exserv, $exuser, $expass, $nwpass);
+				last GETPASS;
+			}
+			else {
+				printf STDERR ("Sorry, passwords doesn't match.\n");
+				printf STDERR ("Try again.\n");
+			};	
+		};
+		last CASE;
+	}
+
+	REM: {
+		last CASE;
+
+	}
+
+	USE: {
+		printf STDERR ("glist sql password admin, ask\@gan.no\n");
+		printf STDERR ("Usage: $0 [-n|-r|-h]\n");
+		last CASE;
+	}
+
+	HLP: {
+		printf STDERR ("glist sql password admin, ask\@gan.no\n");
+		printf STDERR ("Usage: $0 [-n|-r|-h]\n");
+		printf STDERR <<EOF
+
+-h      help
+-n      new entry
+-r	remove entry
+
+EOF
+;
+	}
+}
+
+sub db_check_pass {
+	my ($dbserv, $dbuser, $dbpass) = @_;
+	
+	my $glist = Glist::new(prefix=>$PREFIX,daemon=>1);
+	my $adm = $glist->Glist::Admin::new(sendmail=>1);
+
+	my $userent = db_getuser($dbserv, $dbuser);
+
+	unless($userent->[3] eq $dbpass) {
+		return undef;
+	}
+	else {
+		return 1;
+	};
+};
+
+sub db_getuser {
+	my ($dbserv, $dbuser) = @_;
+
+	my $glist = Glist::new(prefix=>$PREFIX,daemon=>1);
+	my $adm = $glist->Glist::Admin::new(sendmail=>1);
+
+
+        unless($glist->file_check($glist->passwd(), FC_FILE, FC_READ, [FC_MBO, FC_NOZERO])) {
+                return undef;
+        };
+
+        open(PASSWD, $glist->passwd())
+                || $glist->error(sprintf("Couldn't open passwd %s: %s", $glist->passwd(), $!))
+                && return undef;
+        flock(PASSWD, LOCK_SH);
+        while(<PASSWD>) {
+                chomp;
+                # ignore comments
+                next if /^\s*#/;
+                next if /^\s*\/\//;
+		my @fields = split(':', $_);
+		if(($fields[0] eq $dbserv) && ($fields[2] eq $dbuser)) {
+			$fields[3] = $adm->decrypt($fields[3]);
+			return \@fields;
+		};
+	}
+	flock(PASSWD, LOCK_UN);
+
+	return undef;
+};
+
+sub db_adduser {
+	my ($dbserv, $dbname, $dbuser, $dbpass) = @_;
+
+	die("User $dbuser\@$dbserv already exists.\n") if db_getuser($dbserv, $dbuser);
+
+	my $glist = Glist::new(prefix=>$PREFIX,daemon=>1);
+	my $adm = $glist->Glist::Admin::new();
+	$dbpass = $adm->encrypt($dbpass);
+
+	my $passwd = $glist->passwd();
+	open(PASSWD, ">>$passwd") or die("Couldn't open password file $passwd: $!\n");
+	print PASSWD join(':', $dbserv, $dbname, $dbuser, $dbpass), "\n";
+	close(PASSWD);
+
+	printf("$dbuser\@$dbserv sucessfully added.\n");
+
+	return 1;
+};
+
+sub db_passwd {
+	my ($dbserv, $dbuser, $dbpass) = @_;
+};

@@ -1,0 +1,319 @@
+###################
+# /****
+# * GLIST - LIST MANAGER
+# * ============================================================
+# * FILENAME
+# * 	Makefile
+# * PURPOSE
+# *	Compile and install the software
+# * AUTHORS
+# *	Ask Solem Hoel <ask@unixmonks.net>
+# * ============================================================
+# * This file is a part of the glist mailinglist manager.
+# * (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+# *
+# * This program is free software; you can redistribute it and/or modify
+# * it under the terms of the GNU General Public License version 2
+# * as published by the Free Software Foundation.
+# *
+# * This program is distributed in the hope that it will be useful,
+# * but WITHOUT ANY WARRANTY; without even the implied warranty of
+# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# * GNU General Public License for more details.
+# *
+# * You should have received a copy of the GNU General Public License
+# * along with this program; if not, write to the Free Software
+# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+# */
+#####
+
+
+# These are probably the only variables you need to edit.
+PREFIX = @@PREFIX@@
+SENDMAIL = @@SENDMAIL@@
+USE_SQL = @@USE_SQL@@
+USE_PGSQL = @@USE_PGSQL@@
+USE_DB2 = @@USE_DB2@@
+USE_MSQL = @@USE_MSQL@@
+USE_MYSQL = @@USE_MYSQL@@
+GLIST_UID = @@GLIST_UID@@
+GLIST_GID = @@GLIST_GID@@
+PERL = @@PERL@@
+USE_WRAPPERS = @@USE_WRAPPERS@@
+ 
+# ------------------------------------------------------------------------------ #
+
+BINDIR = $(PREFIX)/bin
+SBINDIR = $(PREFIX)/sbin
+SYSCONFDIR = $(PREFIX)/etc
+DOC = $(PREFIX)/doc
+LOG = $(PREFIX)/var/log
+RUN = $(PREFIX)/var/run
+SPOOL = $(PREFIX)/spool
+
+MODULES = 	include/Glist/Bounce.pm include/Glist/Send.pm \
+		include/Glist/Rewrite.pm include/Glist/Admin.pm \
+		include/Glist/Pickup.pm
+MODULES_I =	$(PREFIX)/include/Glist/Bounce.pm $(PREFIX)/include/Glist/Send.pm \
+		$(PREFIX)/include/Glist/Rewrite.pm $(PREFIX)/include/Glist/Admin.pm \
+		$(PREFIX)/include/Glist/Pickup.pm
+GLIST_MOD_I =	$(PREFIX)/include/Glist.pm $(PREFIX)/include/Version.pm $(PREFIX)/include/Queue.pm
+GLIST_MOD =	include/Glist.pm include/Version.pm include/Queue.pm
+FATAL_MOD =	include/Fatal/Sendmail.pm
+UTILS =		utils/gfetch utils/gdefer utils/gchk utils/gconf utils/gdbadmin utils/glq utils/cleanq
+SH_UTILS =	utils/glistctl
+SH_UTILS_I =	$(PREFIX)/bin/glistctl
+UTILS_I =	$(PREFIX)/bin/gfetch $(PREFIX)/bin/gchk $(PREFIX)/bin/gconf \
+		$(PREFIX)/bin/glq $(PREFIX)/bin/cleanq $(PREFIX)/bin/gdbadmin $(PREFIX)/bin/gdefer
+SUID =		utils/gcmd
+SUID_I =	$(PREFIX)/bin/gcmd
+DAEMONS =	daemons/logd daemons/pickupd daemons/rewrited daemons/sendd \
+		daemons/bounced
+DAEMONS_I =	$(PREFIX)/sbin/logd $(PREFIX)/sbin/pickupd $(PREFIX)/sbin/rewrited \
+		$(PREFIX)/sbin/sendd $(PREFIX)/sbin/bounced
+
+.EXPORT_ALL_VARIABLES:
+	
+
+# ------------------------------------------------------------------------------ #
+
+all:		banner checks all_success
+
+install:	all install_check install_bin install_lib \
+		install_glist_lib install_fatal_lib install_utils perm \
+		config install_sheebang install_suid install_wrapper install_salt end
+
+banner:
+	@echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+	@echo "|                    glist - Mailing List Manager                       |"
+	@echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+	@echo
+
+checks:
+	@echo "* Prefix? $(PREFIX)"
+	@echo "* Sendmail? $(SENDMAIL)"
+	@echo "* Use SQL Functions? $(USE_SQL)"
+	@echo
+
+	@echo "* Checking perl environment... "
+	$(PERL) -M5 -e exit;
+	$(PERL) -MPOSIX -e exit;
+	$(PERL) -MGetopt::Std -e exit;
+	$(PERL) -MFile::Copy -e exit;
+	$(PERL) -MDB_File -e exit;
+	$(PERL) -MCrypt::TripleDES -e exit;
+	$(PERL)  -MSocket -e exit;
+	(							\
+		  if [ "$(USE_PGSQL)" = "yes" ];		\
+		  then						\
+			$(PERL) -MDBI -e exit || exit 1;	\
+			$(PERL) -MDBD::Pg -e exit || exit 1;	\
+		  fi;						\
+		  if [ "$(USE_DB2)" = "yes" ];			\
+		  then						\
+			$(PERL) -MDBI -e exit || exit 1;	\
+			$(PERL) -MDBD::DB2 -e exit || exit 1;	\
+		  fi;						\
+		  if [ "$(USE_MSQL)" = "yes" ];			\
+		  then						\
+			$(PERL) -MDBI -e exit || exit 1;	\
+			$(PERL) -MDBD::mSQL -e exit || exit 1;	\
+		  fi;						\
+		  if [ "$(USE_MYSQL)" = "yes" ];		\
+		  then						\
+			$(PERL) -MDBI -e exit || exit 1;	\
+			$(PERL) -MDBD::mysql -e exit || exit 1;	\
+		  fi;						\
+	)
+	@echo
+
+all_success:
+	@echo
+	@echo "Environment *seems ok*."
+	@echo "Now proceed with \`make install'"
+	@echo
+
+install_lib: $(MODULES)
+	@echo "* Installing glist perl modules..."
+	test -d $(PREFIX)/include/Glist || mkdir $(PREFIX)/include/Glist
+	test -d $(PREFIX)/include/Fatal || mkdir $(PREFIX)/include/Fatal
+	cp -f $? $(PREFIX)/include/Glist/
+
+install_glist_lib: $(GLIST_MOD)
+	cp -f $?  $(PREFIX)/include/
+	@echo
+
+install_fatal_lib: $(FATAL_MOD)
+	cp -f $?  $(PREFIX)/include/Fatal
+	@echo
+	
+
+install_check:
+	@echo "* Creating missing directories and setting proper permissions... "
+	test -d $(PREFIX)		|| mkdir -p $(PREFIX)
+	chmod 755 $(PREFIX)
+	test -d $(BINDIR)		|| mkdir -p $(BINDIR)
+	test -d $(SBINDIR)		|| mkdir -p $(SBINDIR)	
+	test -d $(PREFIX)/include	|| mkdir -p $(PREFIX)/include
+	test -d $(LOG)			|| mkdir -p $(LOG)
+	test -d $(LOG)/glist		|| mkdir -p $(LOG)/glist
+	test -d $(RUN)			|| mkdir -p $(RUN)
+	test -d $(SPOOL)		|| mkdir -p $(SPOOL)
+	test -d $(SPOOL)/incoming	|| mkdir -p $(SPOOL)/incoming
+	test -d $(SPOOL)/rewrite	|| mkdir -p $(SPOOL)/rewrite
+	test -d $(SPOOL)/deferred	|| mkdir -p $(SPOOL)/deferred
+	test -d $(SPOOL)/outgoing	|| mkdir -p $(SPOOL)/outgoing
+	test -d $(SPOOL)/approveq	|| mkdir -p $(SPOOL)/approveq
+	test -d $(SPOOL)/send		|| mkdir -p $(SPOOL)/send
+	test -d $(SPOOL)/hold		|| mkdir -p $(SPOOL)/hold
+	test -d $(SYSCONFDIR)		|| mkdir -p $(SYSCONFDIR)
+	test -d $(DOC)			|| mkdir -p $(DOC)
+	test -f $(SYSCONFDIR)/glist.passwd 	|| touch $(SYSCONFDIR)/glist.passwd
+	
+	(								\
+	if [ ! -f "$(SYSCONFDIR)/glist.config" ];			\
+	then								\
+		cp conf/glist.config-example $(SYSCONFDIR)/glist.config;	\
+		sh helpers/config $(SYSCONFDIR)/glist.config $(PREFIX);	\
+	fi								\
+	)
+
+	chmod 1777 $(SPOOL)/outgoing $(SPOOL)/incoming
+	chmod 600 $(SYSCONFDIR)/glist.passwd
+	@echo
+
+install_bin: $(DAEMONS)
+	@echo "* Installing programs in $(PREFIX)/sbin/... "
+	cp -f $? $(SBINDIR)
+	@echo
+
+installdoc:
+	@echo "* Generating documentation... "
+	test -d $(DOC)/html || mkdir $(DOC)/html
+	test -d $(DOC)/specs || mkdir $(DOC)/specs
+	test -d $(PREFIX)/man  || mkdir $(PREFIX)/man
+	test -d $(PREFIX)/man/man1 || mkdir $(PREFIX)/man/man1
+	test -d $(PREFIX)/man/man8 || mkdir $(PREFIX)/man/man8
+	pod2html --flush daemons/sendd --outfile $(DOC)/html/sendd.html
+	pod2html --flush daemons/pickupd --outfile $(DOC)/html/pickupd.html
+	pod2html --flush daemons/rewrited --outfile $(DOC)/html/pickupd.html
+	pod2html --flush daemons/bounced --outfile $(DOC)/html/bounced.html
+	pod2html --flush daemons/logd --outfile $(DOC)/html/logd.html
+	pod2html --flush daemons/rewrited --outfile $(DOC)/html/rewrited.html
+	pod2man daemons/sendd > $(PREFIX)/man/man8/sendd
+	pod2man daemons/pickupd > $(PREFIX)/man/man8/pickupd
+	pod2man daemons/rewrited > $(PREFIX)/man/man8/rewrited
+	pod2man daemons/bounced > $(PREFIX)/man/man8/bounced
+	pod2man daemons/logd    > $(PREFIX)/man/man8/logd
+	gzip -f $(PREFIX)/man/man8/sendd
+	gzip -f $(PREFIX)/man/man8/pickupd
+	gzip -f $(PREFIX)/man/man8/rewrited
+	gzip -f $(PREFIX)/man/man8/bounced
+	gzip -f $(PREFIX)/man/man8/logd
+	pod2text daemons/sendd > $(DOC)/sendd.txt
+	pod2text daemons/pickupd > $(DOC)/pickupd.txt
+	pod2text daemons/rewrited > $(DOC)/pickupd.txt
+	pod2text daemons/bounced > $(DOC)/bounced.txt
+	pod2text daemons/logd > $(DOC)/logd.txt
+	pod2text daemons/rewrited > $(DOC)/rewrited.txt
+	$(PERL) div/changelog2html/cl.pl ./Changelog > $(DOC)/html/changelog.html
+	cp -f Changelog FAQ COPYING INSTALL CONFIG TODO README AUTHORS $(DOC)
+	cp -f conf/glist.config-example $(DOC)
+	cp -f doc/APPROVAL doc/DESIGN $(DOC)/specs
+	pod2html --flush doc/GAH --outfile $(DOC)/html/gah.html
+	pod2text doc/GAH > $(DOC)/specs/GAH
+	pod2html --flush doc/QUEUE_TRACKING --outfile $(DOC)/html/queue_tracking.html
+	pod2text doc/QUEUE_TRACKING > $(DOC)/specs/QUEUE_TRACKING
+
+	rm -f pod2htm*
+	@echo
+
+config: $(GLIST_MOD_I) $(MODULES_I) $(DAEMONS_I) $(UTILS_I) $(SUID_I) $(SH_UTILS_I)
+	@echo "* Configuring glist... "
+	$(PERL) -pi -e"s%@\@INCLUDE\@@%$(PREFIX)/include%g;" $?
+	$(PERL) -pi -e"s%@\@PREFIX\@@%$(PREFIX)%g;" $?
+	$(PERL) -pi -e"s%@\@SENDMAIL\@@%$(SENDMAIL)%g;" $?
+	$(PERL) -pi -e"s%@\@USE_SQL\@@%$(USE_SQL)%g;" $?
+	$(PERL) -pi -e"s%@\@USE_PGSQL\@@%$(USE_PGSQL)%g;" $?
+	$(PERL) -pi -e"s%@\@USE_DB2\@@%$(USE_DB2)%g;" $?
+	$(PERL) -pi -e"s%@\@USE_MSQL\@@%$(USE_MSQL)%g;" $?
+	$(PERL) -pi -e"s%@\@USE_MYSQL\@@%$(USE_MYSQL)%g;" $?
+	$(PERL) -pi -e"s%@\@GLIST_UID\@@%$(GLIST_UID)%g;" $?
+	$(PERL) -pi -e"s%@\@GLIST_GID\@@%$(GLIST_GID)%g;" $?
+	@echo
+
+install_utils: $(UTILS) $(SUID) $(SH_UTILS)
+	@echo "* Installing utilities in $(PREFIX)/bin..."
+	cp -f $? $(BINDIR)
+	@echo
+
+perm: $(DAEMONS_I) $(UTILS_I) $(SH_UTILS_I)
+	chmod 755 $?
+	@echo
+
+	
+install_suid: $(SUID_I)
+	@echo "* Installing setuid utilities in $(PREFIX)/bin..."
+	chmod 4555 $?
+	@echo
+
+install_nosuid: $(SUID_I)
+	chmod 755 $(SUID_I);
+
+install_sheebang: $(SUID_I) $(UTILS_I) $(DAEMONS_I) $(MODULES_I) $(GLIST_MOD_I)
+	@echo "* Setting sheebangs..."
+	@echo
+	$(PERL) helpers/sheebang.pl "$(PERL)" $?
+	@echo
+	
+
+clean:
+	-rm -f Makefile
+	-( cd div/wrapper-solution && make clean )
+	-rm -f pod2htm*
+		
+
+distclean: clean
+	-rm -f config.cache
+
+
+count:
+	-(wc -l daemons/* Makefile INSTALL CONFIG 	\
+		AUTHORS Changelog README TODO DESIGN include/* 	\
+		include/Glist/* APPROVAL helpers/* div/changelog2html/*		\
+		utils/* div/wrapper-solution/* FAQ conf/* \
+		div/wrapper-solution/src/* div/wrapper-solution/src/include/*) 2>/dev/null \
+ 		| tail -n1
+
+install_salt:
+	@echo "* Generating host salt..."
+	test -f $(PREFIX)/var/run/.salt || $(PERL) -Iinclude helpers/gensalt.pl > $(PREFIX)/var/run/.salt
+	chmod 600 $(PREFIX)/var/run/.salt
+	@echo 
+	@echo "______________________________________________________________________________"
+	@echo "* * * IMPORTANT: The salt for this installation is: `cat $(PREFIX)/var/run/.salt`"
+	@echo "If this is lost somehow the passwords will be *unreadable*, so please"
+	@echo "back this up and store it in a safe place."
+	@echo 
+	@echo "You can get this salt later by getting the contents of $(PREFIX)/var/run/.salt,"
+	@echo "but please be sure that this file is only readable by the glist user."
+	@echo
+
+end:
+	@echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+	@echo "| Glist was successfully installed.                                     |"
+	@echo "| Now you can execute \`make installdoc' to install the documentation    |"
+	@echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+	@echo
+
+install_wrapper:
+	@echo "* Installing setuid wrappers..."
+	(								\
+		if [ "$(USE_WRAPPERS)" = "yes" ];			\
+		then							\
+			cd div/wrapper-solution	&& make install;	\
+		fi							\
+	);
+	@echo
+		
+

@@ -1,0 +1,244 @@
+#! /bin/bash
+# /****
+# * GLIST - LIST MANAGER
+# * ============================================================
+# * FILENAME
+# *       glistctl
+# * PURPOSE
+# *       A script to easily start, stop and restart the glist
+# *       daemons. Also includes a function to check if all the
+# * 	  daemons are running and in case not, restart them.
+# * AUTHORS
+# *       Ask Solem Hoel <ask@unixmonks.net>
+# * ============================================================
+# * This file is a part of the glist mailinglist manager.
+# * (c) 2001 Ask Solem Hoel <http://www.unixmonks.net>
+# *
+# * This program is free software; you can redistribute it and/or modify
+# * it under the terms of the GNU General Public License version 2
+# * as published by the Free Software Foundation.
+# *
+# * This program is distributed in the hope that it will be useful,
+# * but WITHOUT ANY WARRANTY; without even the implied warranty of
+# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# * GNU General Public License for more details.
+# *
+# * You should have received a copy of the GNU General Public License
+# * along with this program; if not, write to the Free Software
+# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+# */
+
+# Prefix to glist, set by Makefile.
+PREFIX=@@PREFIX@@
+
+# Arguments to the daemons that takes arguments.
+ARGS=`$PREFIX/bin/gconf daemon_args 2>/dev/null`;
+
+# Location of the pidfiles.
+export PIDHOME=${PREFIX}/var/run/
+
+
+ARGS=${ARGS:-"-D"};
+VERSIONINFO=`$PREFIX/bin/gconf versioninfo 2>/dev/null`;
+
+myself=$PREFIX/bin/${0##*/}
+
+
+# #############################
+# FUNCTION: start()
+#
+# DESCRIPTION:
+#	Start the daemon that we got as an argument.
+#
+# SYNOPSIS:
+#	start {daemon}
+#
+start() {
+	echo "Daemon $1 not running!?! Restarting..."
+	case $1 in
+		logd)
+			cd $PREFIX/sbin
+			./logd
+		;;
+		pickupd)
+			cd $PREFIX/sbin
+			./pickupd $ARGS
+		;;
+		rewrited)
+			cd $PREFIX/sbin
+			./rewrited $ARGS
+		;;
+		sendd)
+			cd $PREFIX/sbin
+			./sendd $ARGS
+		;;
+		bounced)
+			cd $PREFIX/sbin
+			./bounced $ARGS
+		;;
+	esac
+}
+
+case $1 in 
+	start)
+		$PREFIX/bin/gchk || exit 0;
+		echo -n "Starting glist...";
+		for daemon in logd pickupd rewrited sendd bounced
+		do
+			echo -n " $daemon";	
+
+			# Get the pidfile.
+			PIDFILE=${PIDHOME}/${daemon}-lock
+			
+			if [ -f "$PIDFILE" ]
+			then
+				# get the pid
+				pid=`cat $PIDFILE`
+
+				# start the process if it doesn't have any /proc entry.
+				if [ ! -d "/proc/$pid" ]
+				then
+					start $daemon 1>/dev/null 2>&1
+					($myself is_running $daemon || echo -e "\n\nError!!!\nCouldn't start $daemon"; exit 1)
+				fi
+			else
+				start $daemon 1>/dev/null 2>&1
+				($myself is_running $daemon || echo -ne "\n\nError!!!\nCouldn't start $daemon"; exit 1)
+			fi
+			
+		done
+		echo
+	;;
+	stop)
+		echo -n "Stopping glist...";
+		for daemon in logd pickupd rewrited sendd bounced
+		do	
+			# Get the pidfile.
+			PIDFILE=${PIDHOME}/${daemon}-lock
+			echo -n " $daemon";
+			if [ -f "$PIDFILE" ]
+			then
+				# get the pid
+				pid=`cat $PIDFILE`
+
+				if [ -d "/proc/$pid" ]
+				then
+					kill -TERM $pid 1>/dev/null 2>&1
+				fi
+				rm -f $PIDFILE
+			fi
+		done
+		echo
+	;;
+	check)
+		$PREFIX/bin/gchk || exit 0;
+		echo -n "Checking glist..."
+		for daemon in logd pickupd rewrited sendd bounced
+		do	
+			# Get the pidfile.
+			PIDFILE=${PIDHOME}/${daemon}-lock
+			echo -n " $daemon";
+			if [ -f "$PIDFILE" ]
+			then
+				# get the pid.	
+				pid=`cat $PIDFILE`
+
+				# start the process if it doesn't have any /proc entry.
+				if [ ! -d "/proc/$pid" ]
+				then
+					start $daemon 1>/dev/null 2>&1
+				fi
+			else
+				# ... or start it if the pidfile isn't even there.
+			start $daemon
+		fi
+		done
+		echo
+	;;
+	restart)
+		$PREFIX/bin/gchk || exit 0;
+		echo -n "Restarting glist...";
+		PIDFILE=${PIDHOME}/logd-lock
+		echo -n " logd"
+		if [ -f "$PIDFILE" ]  
+		then
+			pid=`cat $PIDFILE`
+
+			if [ ! -d "/proc/$pid" ]
+			then
+				start logd 1>/dev/null 2>&1
+			fi
+		else
+			start logd 1>/dev/null 2>&1
+		fi
+		for daemon in pickupd rewrited sendd bounced
+		do
+			PIDFILE=${PIDHOME}/${daemon}-lock
+			echo -n " $daemon";	
+			if [ -f "$PIDFILE" ]
+			then
+				# get the pid
+				pid=`cat $PIDFILE`
+
+				if [ ! -d "/proc/$pid" ]
+				then
+					start $daemon 1>/dev/null 2>&1
+				else
+					kill -HUP $pid 1>/dev/null 2>&1
+				fi
+			else
+				start $daemon
+			fi
+		done
+		echo
+	;;
+	is_running)
+		if [ ! $2 ]
+		then
+			echo "glistctl (glist ${$VERSIONINFO})";
+			echo "Error: Missing daemon name to check status on"
+			exit 1
+		else
+			daemon=$2
+			PIDFILE=${PIDHOME}/${daemon}-lock
+			if [ -f "$PIDFILE" ]
+			then
+				pid=`cat $PIDFILE`
+
+				if [ ! -d "/proc/$pid" ]
+				then
+					exit 1
+				fi
+			else
+				exit 1
+			fi
+		fi
+	;;
+	reload)
+		$0 stop
+		$0 start
+	;;
+	configtest)
+		$PREFIX/bin/gchk
+	;;
+	banner)
+		echo "glistctl (glist ${VERSIONINFO})";
+		echo "Usage: ${0##*/} {start|stop|restart|reload|configtest|check|help}";
+	;;
+	help)
+		$0 banner
+		cat <<EOF
+
+start        - start the glist system.
+stop         - stop the glist system.
+restart      - reload configuration and restore dead daemons.
+reload       - stop and start all daemons.
+configtest   - check the configuration for errors.
+check        - check if all the daemons are running and restart if any dead.
+	       (useful in cron scripts)
+EOF
+	;;	
+	*)
+		$0 banner
+	;;
+esac

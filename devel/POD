@@ -1,0 +1,31 @@
+__END__
+
+=cut
+=head1 NAME
+
+name	- name
+
+=head1 SYNOPSIS
+
+	/path/to/daemon -D -t time_to_sleep
+
+=head1 COMMAND LINE SWITCHES AND OPTIONS
+
+	Usage: daemon [-v] [-n] {-D [-t time_to_sleep]|-s}
+=head1 DESCRIPTION
+
+	pickupd finds new messages in $SPOOL/incoming and moves
+	them to $SPOOL/rewrite.
+=head1 CONFIGURATION
+
+	Configuration is done in the script it self.
+	Thogh this is preferred to be changed in the Makefile,
+	this can be done in the script as well.
+
+	In the first lines of sendd you can configure the following variables:
+=head1	FILES
+=head1 VERSION
+=head1 BUGS
+=head1 AUTHOR
+	Ask Solem Hoel <ask@unixmonks.net>, http://www.unixmonks.net
+=cut
